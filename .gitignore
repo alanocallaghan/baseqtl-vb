@@ -1,0 +1,5 @@
+*.out
+rds
+*.err
+.snakemake
+fig

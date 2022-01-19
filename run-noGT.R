@@ -9,7 +9,6 @@ parser$add_argument(
 )
 args <- parser$parse_args()
 
-
 if (is.null(method <- args[["method"]])) {
     method <- "optimizing"
 }
@@ -44,7 +43,6 @@ gfiles <- lapply(
 
 add <- c("N", "G", "A", "L") ## variables to add
 same <- c("K", "k", "sdP", "aveP", "mixP") ## no change
-conc <- c("Y", "sNB", "gNB", "pNB", "gase", "m", "n", "pH", "ai0", "sdai0", "s", "h2g")
 bind <- "cov" ## to bind
 
 vars <- c("ba", "bd", "bp", "bn")
@@ -56,7 +54,8 @@ fit_stan <- function(gene) {
     )
     no_all <- readRDS(files[[1]])
     pso_all <- readRDS(files[[2]])
-    lapply(names(no_all),
+    snps_both <- intersect(names(no_all), names(pso_all))
+    lapply(snps_both,
         function(snp) {
             no <- no_all[[snp]]
             pso <- pso_all[[snp]]
@@ -80,6 +79,11 @@ fit_stan <- function(gene) {
             }
             for (s in same) {
                 out[[s]] <- dn[[s]]
+            }
+            
+            conc <- c("Y", "sNB", "gNB", "pNB", "gase", "m", "n", "pH", "ai0", "sdai0", "s", "h2g")
+            if (is.null(dn$ai0) || is.null(dp$ai0)) {
+                conc <- c("Y", "sNB", "gNB", "pNB", "gase", "m", "n", "pH", "s") ## to concatenate
             }
             for (x in conc) {
                 out[[x]] <- c(dn[[x]], dp[[x]])
@@ -105,13 +109,23 @@ fit_stan <- function(gene) {
             out[["I"]] <- rep(c(1, 0), sapply(l.sub, function(i) i[["N"]]))
             out[["IA"]] <- rep(c(1, 0), sapply(l.sub, function(i) i[["A"]]))
 
-            capture.output(
+            if (is.null(dn$ai0) || is.null(dp$ai0)) {
+                capture.output(
+                    time <- system.time(
+                        post <- fun(
+                            baseqtl:::stanmodels$noGT2T_nb_ase_refbias, data = out
+                        )
+                    )
+                )
+            } else {
+                capture.output(
                 time <- system.time(
                     post <- fun(
-                        baseqtl:::stanmodels$noGT2T_nb_ase_refbias, data = out
+                        baseqtl:::stanmodels$noGT2T_nb_ase, data = out
                     )
                 )
             )
+            }
             if (method == "optimizing") {
                 tab <- posterior::summarise_draws(
                     post$theta_tilde,
@@ -139,8 +153,9 @@ fit_stan <- function(gene) {
 all_stan_res <- parallel::mclapply(
     seq_along(genes),
     function(i) {
+        cat(i, "/", length(genes), "\n")
         gene <- genes[[i]]
-        file <- sprintf("%s/%s.rds", method, gene)
+        file <- sprintf("rds/noGT/%s/%s.rds", method, gene)
         if (file.exists(file)) {
             readRDS(file)
         } else {
@@ -150,9 +165,8 @@ all_stan_res <- parallel::mclapply(
             )
             saveRDS(x, file)
         }
-    },
-    mc.cores = 16
+    }, mc.cores = 16
 )
 names(all_stan_res) <- genes
 
-saveRDS(all_stan_res, sprintf("noGT/%s/all.rds", method))
+saveRDS(all_stan_res, sprintf("rds/noGT/%s/all.rds", method))

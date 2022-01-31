@@ -4,15 +4,45 @@ library("ggpointdensity")
 library("viridis")
 library("yardstick")
 library("geomtextpath")
+library("dplyr")
+library("argparse")
+
 theme_set(theme_bw())
+
+parser <- ArgumentParser()
+parser$add_argument(
+    "-m", "--model",
+    type = "character"
+)
+args <- parser$parse_args()
+
+if (is.null(model <- args[["model"]])) {
+    model <- "noGT"
+}
 
 dfs <- lapply(c("vb", "optimizing", "sampling"),
     function(m) {
-        f <- list.files(path = file.path("rds", m), pattern = "ENSG.*.rds", full.names = TRUE)
+        print(m)
+        f <- list.files(path = file.path("rds", model, m), pattern = "ENSG.*.rds", full.names = TRUE)
         input <- lapply(f, readRDS)
-        df <- do.call(rbind, lapply(input, function(x) do.call(rbind, x)))
+        if (model == "noGT") {
+            input <- lapply(input, 
+                function(x) {
+                    if (!length(x)) return(NULL)
+                    c(x[[1]], x[[2]])
+                }
+            )
+            input <- Reduce(c, input)
+            df <- do.call(rbind, input)
+            df <- as.data.frame(df)
+            df$test <- paste(df$gene, df$snp , sep = "_")
+        } else {
+            df <- do.call(rbind, lapply(input, function(x) do.call(rbind, x)))
+            df <- as.data.frame(df)
+            df$test <- paste(df$gene, rownames(df) , sep = "_")
+        }
+        
         df$method <- gsub("old/", "", m)
-        df$test <- paste(df$gene, rownames(df) , sep = "_")
         ## TRUE means that the HPD interval is one side of zero (sig)
         ## FALSE means it overlaps zero (null)
         df$null.95 <- sign(df$"2.5%") == sign(df$"97.5%")
@@ -44,26 +74,26 @@ mdf %>%
     aes(nsnps, time) +
     geom_point() +
     geom_smooth(method = "lm") -> g
-ggsave("fig/time_nsnp.png")
+ggsave(sprintf("fig/%s/time_nsnp.png", model))
 
 
-sum(mdf$time)
-sum(mdf$time[mdf$null.99.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.95.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.90.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.80.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.70.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.60.vb]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.50.vb]) + sum(mdf$time.vb)
+# sum(mdf$time)
+# sum(mdf$time[mdf$null.99.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.95.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.90.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.80.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.70.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.60.vb]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.50.vb]) + sum(mdf$time.vb)
 
 
-sum(mdf$time[mdf$null.99.map]) + sum(mdf$time.map)
-sum(mdf$time[mdf$null.95.map]) + sum(mdf$time.map)
-sum(mdf$time[mdf$null.90.map]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.80.map]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.70.map]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.60.map]) + sum(mdf$time.vb)
-sum(mdf$time[mdf$null.50.map]) + sum(mdf$time.map)
+# sum(mdf$time[mdf$null.99.map]) + sum(mdf$time.map)
+# sum(mdf$time[mdf$null.95.map]) + sum(mdf$time.map)
+# sum(mdf$time[mdf$null.90.map]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.80.map]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.70.map]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.60.map]) + sum(mdf$time.vb)
+# sum(mdf$time[mdf$null.50.map]) + sum(mdf$time.map)
 
 
 gdf <- group_by(mdf, gene)
@@ -143,7 +173,7 @@ for (t in c(99, 95)) {
         labs(x = "Sensitivity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
-    ggsave(sprintf("fig/time_vs_sens_vb_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_sens_vb_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(sens_map, time_map) +
@@ -157,7 +187,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_map)) +
         labs(x = "Sensitivity", y = "Total time (s)") +
         ggtitle("Sensitivity vs total time for MAP")
-    ggsave(sprintf("fig/time_vs_sens_map_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_sens_map_%s.png", model, t), width = 5, height = 5)
     g <- ggplot() +
         aes(spec_vb, time_vb) +
         geom_line() +
@@ -171,7 +201,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
 
-    ggsave(sprintf("fig/time_vs_spec_vb_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_spec_vb_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(spec_map, time_map) +
@@ -185,7 +215,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_map)) +
         labs(x = "Specificity", y = "Total time (s)") +
         ggtitle("Specificity vs total time for MAP")
-    ggsave(sprintf("fig/time_vs_spec_map_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_spec_map_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_map, sens_map) +
@@ -194,7 +224,7 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("MAP") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig/roc_map_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/roc_map_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_vb, sens_vb) +
@@ -203,7 +233,7 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("VB") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig/roc_vb_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/roc_vb_%s.png", model, t), width = 5, height = 5)
 }
 
 
@@ -318,7 +348,7 @@ for (t in c(99, 95)) {
         labs(x = "Sensitivity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
-    ggsave(sprintf("fig/time_vs_sens_gene_vb_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_sens_gene_vb_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(sens_map, time_map) +
@@ -332,7 +362,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_map)) +
         labs(x = "Sensitivity", y = "Total time (s)") +
         ggtitle("Sensitivity vs total time for MAP")
-    ggsave(sprintf("fig/time_vs_sens_gene_map_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_sens_gene_map_%s.png", model, t), width = 5, height = 5)
     g <- ggplot() +
         aes(spec_vb, time_vb) +
         geom_line() +
@@ -346,7 +376,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
 
-    ggsave(sprintf("fig/time_vs_spec_gene_vb_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_spec_gene_vb_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(spec_map, time_map) +
@@ -360,7 +390,7 @@ for (t in c(99, 95)) {
         ylim(0, max(sum(mdf$time), time_map)) +
         labs(x = "Specificity", y = "Total time (s)") +
         ggtitle("Specificity vs total time for MAP")
-    ggsave(sprintf("fig/time_vs_spec_gene_map_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/time_vs_spec_gene_map_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_map, sens_map) +
@@ -369,7 +399,7 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("MAP") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig/roc_map_gene_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/roc_map_gene_%s.png", model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_vb, sens_vb) +
@@ -378,7 +408,7 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("VB") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig/roc_vb_gene_%s.png", t), width = 5, height = 5)
+    ggsave(sprintf("fig/%s/roc_vb_gene_%s.png", model, t), width = 5, height = 5)
 }
 
 
@@ -392,7 +422,7 @@ g <- ggplot(mdf) +
     theme(legend.position = "bottom") +
     # geom_abline(slope = 1, intercept = 0) +
     labs(x = "Time (s) for ADVI", y = "Time (s) for MAP")
-ggsave("fig/time_vb_vs_map.png", width = 5, height = 5)
+ggsave(sprintf("fig/%s/time_vb_vs_map.png", model), width = 5, height = 5)
 
 g <- ggplot(mdf) +
     aes(time, time.vb) +
@@ -403,7 +433,7 @@ g <- ggplot(mdf) +
     theme(legend.position = "bottom") +
     # geom_abline(slope = 1, intercept = 0) +
     labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
-ggsave("fig/time_hmc_vs_vb.png", width = 5, height = 5)
+ggsave(sprintf("fig/%s/time_hmc_vs_vb.png", model), width = 5, height = 5)
 
 g <- ggplot(mdf) +
     aes(time, time.map) +
@@ -414,7 +444,7 @@ g <- ggplot(mdf) +
     theme(legend.position = "bottom") +
     # geom_abline(slope = 1, intercept = 0) +
     labs(x = "Time (s) for HMC", y = "Time (s) for MAP")
-ggsave("fig/time_hmc_vs_map.png", width = 5, height = 5)
+ggsave(sprintf("fig/%s/time_hmc_vs_map.png", model), width = 5, height = 5)
 
 
 
@@ -437,5 +467,5 @@ g <- ggplot(df) +
     scale_colour_brewer(palette = "Set1", name = "Method") +
     ylab("Density") +
     theme(legend.position = "bottom")
-ggsave("fig/time-comparison.png", width = 5, height = 5)
+ggsave(sprintf("fig/%s/time-comparison.png", model), width = 5, height = 5)
 

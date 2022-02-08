@@ -171,7 +171,7 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         lims(x = r, y = r) +
         labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-    ggsave(sprintf("fig/noGT/diag/xy_%s_%s.png", x, method))
+    ggsave(sprintf("fig/noGT/diag/xy_%s.png", x))
     
     g <- ggplot(mdf) +
         aes_string(x, "discrepancy") +
@@ -182,7 +182,7 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
         geom_smooth() +
         labs(x = x, y = "Discrepancy")
 
-    ggsave(sprintf("fig/noGT/diag/disc_%s_%s.png", x, method))
+    ggsave(sprintf("fig/noGT/diag/disc_%s.png", x))
 }
 
 # stop()
@@ -208,7 +208,7 @@ g <- ggplot(mdf) +
     ) +
     labs(x = "Gene", y = "Discrepancy")
 
-ggsave(sprintf("fig/noGT/diag/disc_gene_box_%s.png", method))
+ggsave("fig/noGT/diag/disc_gene_box.png")
 
 
 g <- ggplot() +

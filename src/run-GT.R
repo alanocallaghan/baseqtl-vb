@@ -33,7 +33,6 @@ gdd <- lapply(genes, function(gene) {
     lapply(gene_datas, function(x) {
         out <- in.neg.beta.prob.eff2(x)
         out$cov <- cbind(out$cov, ls_mat[, gene])
-        out <- in.neg.beta.prob.eff2(x)
         out$k <- 2
         out$aveP <- c(0, 0)
         out$sdP <- c(0.0309, 0.3479)

@@ -5,6 +5,6 @@
 
 module load R/4.0.3
 # Rscript run-GT.R -m sampling
-Rscript run-noGT.R -m optimizing
+# Rscript run-noGT.R -m optimizing
 Rscript run-noGT.R -m vb
 Rscript run-noGT.R -m sampling

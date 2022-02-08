@@ -1,5 +1,6 @@
 library("argparse")
 library("ggplot2")
+library("baseqtl")
 library("ggpointdensity")
 library("ggExtra")
 library("viridis")
@@ -14,7 +15,7 @@ parser$add_argument(
 args <- parser$parse_args()
 
 if (is.null(method <- args[["method"]])) {
-    method <- "optimizing"
+    method <- "vb"
 }
 mname <- switch(method,
     "vb" = "ADVI",
@@ -29,26 +30,78 @@ files <- grep("rbias", files, value=TRUE)
 stan_files <- grep("GT.stan1.input.rds", files, value = TRUE, fixed = TRUE)
 genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
+dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
 
-all_stan_res <- readRDS(sprintf("rds/%s/all.rds", method))
-table(as.logical(sapply(all_stan_res, length)))
+
+outfiles <- list.files(sprintf("rds/GT/%s/", method), pattern = "ENSG*", full.names = TRUE)
+infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
+
+
+dfs <- lapply(
+    1:length(infiles),
+    function(i) {
+        cat(i, "/", length(infiles), "\n")
+        infile <- infiles[[i]]
+        outfile <- outfiles[[i]]
+        out <- readRDS(outfile)
+        inp <- readRDS(infile)
+        if (!length(out)) {
+            return(list())
+        }
+        covars <- lapply(inp,
+            function(x) {
+                inp1 <- in.neg.beta.prob.eff2(x)
+                data.frame(
+                    n_tot = inp1$N,
+                    n_ase = inp1$A,
+                    mean_count = mean(log1p(inp1$Y)),
+                    sd_count = sd(log1p(inp1$Y)),
+                    n_wt = sum(inp1$g == 0),
+                    n_het = sum(abs(inp1$g) == 1),
+                    n_hom = sum(abs(inp1$g) == 2)
+                )
+            }
+        )
+        covars <- do.call(rbind, covars)
+        df <- do.call(rbind, out)
+        df <- cbind(covars, df)
+        df$snp <- names(out)
+        df
+    }
+    # ,
+    # infiles,
+    # outfiles,
+    # SIMPLIFY = FALSE
+)
+
+
+for (i in 1:length(dfs)) {
+    if (length(dfs[[i]])) {
+        dfs[[i]]$gene <- gsub(".*(ENSG\\d+).*", "\\1", outfiles[[i]])
+    }
+}
+approx_res_df <- do.call(rbind, dfs)
+
+# all_stan_res <- readRDS(sprintf("rds/GT/%s/all.rds", method))
+# table(as.logical(sapply(all_stan_res, length)))
 # FALSE  TRUE 
 #     6   100 
 
-approx_res_df <- do.call(
-    rbind,
-    lapply(
-        all_stan_res,
-        function(x) {
-            if (is.null(x)) x <- list()
-            df <- do.call(rbind, x)
-            df$rSNP <- names(x)
-            df
-        }
-    )
-)
-rownames(approx_res_df) <- NULL
-if (is.null(approx_res_df$gene)) approx_res_df$gene <- approx_res_df$feature
+# approx_res_df <- do.call(
+#     rbind,
+#     lapply(
+#         all_stan_res,
+#         function(x) {
+#             if (is.null(x)) x <- list()
+#             df <- do.call(rbind, x)
+#             df$rSNP <- names(x)
+#             df
+#         }
+#     )
+# )
+
+# rownames(approx_res_df) <- NULL
+# if (is.null(approx_res_df$gene)) approx_res_df$gene <- approx_res_df$feature
 
 sample_res_df <- do.call(
     rbind,
@@ -58,13 +111,15 @@ sample_res_df <- do.call(
         }
     )
 )
-approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$rSNP, sep = "_")
+approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$snp, sep = "_")
+# approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$rSNP, sep = "_")
 sample_res_df$test <- paste(sample_res_df$Gene_id, sample_res_df$tag , sep = "_")
 
 approx_res_df$null.95 <- sign(approx_res_df$"2.5%") == sign(approx_res_df$"97.5%")
-approx_res_df$null.50 <- sign(approx_res_df$"25%") == sign(approx_res_df$"75%")
+approx_res_df$null.50 <- sign(approx_res_df$"25.0%") == sign(approx_res_df$"75.0%")
 sample_res_df$null.95 <- sign(sample_res_df$"log2_aFC_2.5.") == sign(sample_res_df$"log2_aFC_97.5.")
 sample_res_df$null.50 <- sign(sample_res_df$"log2_aFC_25.") == sign(sample_res_df$"log2_aFC_75.")
+
 
 sample_res_df <- sample_res_df[sample_res_df$test %in% approx_res_df$test, ]
 im <- match(sample_res_df$test, approx_res_df$test)
@@ -102,6 +157,62 @@ mdf$Null.95 <- factor(mdf$Null.95, levels = flev)
 mdf$Null.50 <- factor(mdf$Null.50, levels = flev)
 mdf$Null.95.50 <- factor(mdf$Null.95.50, levels = flev)
 
+
+mdf$discrepancy <- mdf$mean - mdf$log2_aFC_mean
+
+
+for (x in c("gene", "time", "n_ase", "mean_count", "sd_count", "n_wt", "n_het", "n_hom")) {
+    scale <- if (x == "gene") scale_colour_discrete(guide="none") else scale_colour_viridis()
+    g <- ggplot(mdf) +
+        aes_string("mean", "log2_aFC_mean", colour = x) +
+        geom_point(size = 0.8) +
+        scale +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        lims(x = r, y = r) +
+        labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    ggsave(sprintf("fig/GT/diag/%s_%s.png", x, method))
+    
+    g <- ggplot(mdf) +
+        aes_string(x, "discrepancy") +
+        geom_point(size = 0.8) +
+        # scale_colour_viridis() +
+        # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        # lims(x = r, y = r) +
+        geom_smooth() +
+        labs(x = x, y = "Discrepancy")
+
+    ggsave(sprintf("fig/GT/diag/disc_%s_%s.png", x, method))
+}
+
+mdf$gf <- as.numeric(factor(mdf$gene))
+
+tmp <- mdf %>%
+    group_by(gene) %>%
+    summarise(mean_disc = mean(discrepancy), sum_disc = sum(abs(discrepancy) > 0.3))
+tmp %>% arrange(-sum_disc)
+gg <- tmp %>% arrange(-sum_disc) %>% top_n(5) %>% pull(gene)
+
+g <- ggplot(mdf) +
+    aes(gene, discrepancy, colour = gene %in% gg) +
+    geom_violin() +
+    # geom_jitter(size = 0.8) +
+    # scale_colour_viridis() +
+    # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    # lims(x = r, y = r) +
+    geom_smooth() +
+    theme(
+        axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+        panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank()
+    ) +
+    labs(x = "Gene", y = "Discrepancy")
+
+ggsave(sprintf("fig/GT/diag/disc_gene_box_%s.png", method))
+
+
+# stop()
+
+
+
 g <- ggplot() +
     aes(approx_res_df$mean, sample_res_df$log2_aFC_mean) +
     geom_pointdensity() +
@@ -109,7 +220,7 @@ g <- ggplot() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/%s_mcmc_estimates_all.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all.png", method), width = 7, height = 7)
 
 
 mdf <- mdf[order(mdf$Null.99), ]
@@ -121,7 +232,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/%s_mcmc_estimates_all_categorical_99.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_99.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.99.VB, HMC = mdf$null.99.HMC)
 ## map
@@ -155,7 +266,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/%s_mcmc_estimates_all_categorical_95.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_95.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.95.VB, HMC = mdf$null.95.HMC)
 ## map
@@ -194,7 +305,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/%s_mcmc_estimates_all_categorical_50.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_50.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.50.VB, HMC = mdf$null.50.HMC)
 ## vb
@@ -415,7 +526,7 @@ ggplot() +
     ) +
     geom_vline(xintercept = median(mdf$time), linetype = "dashed") +
     labs(x = "Time (s)", y = "Frequency")
-ggsave(sprintf("fig/time_dist_all_%s.png", method), width = 6, height = 6)
+ggsave(sprintf("fig/GT/time/time_dist_all_%s.png", method), width = 6, height = 6)
 
 
 
@@ -429,7 +540,7 @@ ss$null.50 <- sign(ss$"log2_aFC_75%") == sign(ss$"log2_aFC_25%")
 ss <- ss[ss$test %in% approx_res_df$test, ]
 im <- match(ss$test, approx_res_df$test)
 approx_res_df_sub <- approx_res_df[im, ]
-approx_res_df_sub$null.50 <- sign(approx_res_df_sub$"75%") == sign(approx_res_df_sub$"25%")
+approx_res_df_sub$null.50 <- sign(approx_res_df_sub$"75.0%") == sign(approx_res_df_sub$"25.0%")
 stopifnot(all(ss$test == approx_res_df_sub$test))
 r2 <- range(c(ss$log2_aFC_mean, approx_res_df_sub$mean))
 
@@ -440,7 +551,7 @@ g <- ggplot() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r2, y = r2) +
     labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
-ggsave(file = sprintf("fig/%s_mcmc_estimates.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc.png", method), width = 7, height = 7)
 
 mdf2 <- merge(approx_res_df_sub, ss, by = "test", suffix = c(".VB", ".HMC"))
 mdf2$null.99.VB <- ifelse(mdf2$null.99.VB, "no", "yes")
@@ -470,7 +581,7 @@ g <- ggplot(mdf2) +
     labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
 
 # ggMarginal(g)
-ggsave(file = sprintf("fig/%s_mcmc_estimates_categorical_99.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_99.png", method), width = 7, height = 7)
 
 yardstick::sens_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.99.VB))
 ## vb
@@ -506,7 +617,7 @@ g <- ggplot(mdf2) +
     labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
 
 # ggMarginal(g)
-ggsave(file = sprintf("fig/%s_mcmc_estimates_categorical_95.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_95.png", method), width = 7, height = 7)
 
 yardstick::sens_vec(factor(mdf2$null.95.HMC), factor(mdf2$null.95.VB))
 ## vb
@@ -548,7 +659,7 @@ g <- ggplot(mdf2) +
     labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
 
 # ggMarginal(g)
-ggsave(file = sprintf("fig/%s_mcmc_estimates_categorical_50.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_50.png", method), width = 7, height = 7)
 
 
 table(ADVI = mdf2$null.50.VB, HMC = mdf2$null.50.HMC)
@@ -700,4 +811,4 @@ ggplot() +
     ) +
     geom_vline(xintercept = median(mdf2$time), linetype = "dashed") +
     labs(x = "Time (s)", y = "Frequency")
-ggsave(sprintf("fig/time_dist_all_%s.png", method), width = 6, height = 6)
+ggsave(sprintf("fig/GT/time/time_dist_all_%s.png", method), width = 6, height = 6)

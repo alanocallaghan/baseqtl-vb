@@ -3,3 +3,6 @@ rds
 *.err
 .snakemake
 fig
+*.pdf
+*.png
+*.json

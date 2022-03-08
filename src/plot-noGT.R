@@ -28,7 +28,7 @@ dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/psoriasis/refbias/Btrecase/SpikePrior/
 # files <- list.files(dir)
 # files <- grep("refbias", files, value = TRUE)
 outfiles <- list.files(sprintf("rds/noGT/%s/", method), pattern = "ENSG*", full.names=TRUE)
-genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", outfiles))
+genes <- unique(gsub(".*(ENSG\\d+)..*", "\\1", outfiles))
 
 infiles <- list(
     normal_skin = sprintf("%s/refbias.%s.normal_skin.noGT.stan.input.rds", dir, genes),
@@ -51,13 +51,25 @@ process_nogt <- function(x) {
     )
 }
 dfs <- lapply(
-    1:length(outfiles),
+    1:length(genes),
     function(i) {
         cat(i, "/", length(outfiles), "\n")
         infile_norm <- infiles[[1]][[i]]
         infile_pso <- infiles[[2]][[i]]
-        outfile <- outfiles[[i]]
-        out <- readRDS(outfile)
+        
+        outfiles_norm <- list.files(
+            "rds/noGT/vb/",
+            pattern = sprintf("%s_.*_normal_skin.rds", genes[[i]]),
+            full.names = TRUE
+        )
+        outfiles_pso <- list.files(
+            "rds/noGT/vb/",
+            pattern = sprintf("%s_.*_Psoriasis_skin.rds", genes[[i]]),
+            full.names = TRUE
+        )
+        outs_norm <- do.call(rbind, lapply(outfiles_norm, readRDS))
+        outs_pso <- do.call(rbind, lapply(outfiles_pso, readRDS))
+        out <- rbind(outs_norm, outs_pso)
         inp_norm <- readRDS(infile_norm)
         inp_pso <- readRDS(infile_pso)
         if (!length(out)) {
@@ -67,13 +79,15 @@ dfs <- lapply(
         covars_pso <- lapply(inp_pso, process_nogt)
         covars_norm <- do.call(rbind, covars_norm)
         covars_pso <- do.call(rbind, covars_pso)
-        # covars_norm$condition <- "normal_skin"
-        # covars_pso$condition <- "Psoriasis_skin"
+        covars_norm$condition <- "normal_skin"
+        covars_pso$condition <- "Psoriasis_skin"
         covars <- rbind(covars_norm, covars_pso)
-        df_norm <- do.call(rbind, out[[1]])
-        df_pso <- do.call(rbind, out[[2]])
-        df_all <- rbind(df_norm, df_pso)
-        df_all <- cbind(covars, df_all)
+        covars$gene <- genes[[i]]
+        covars$snp <- rownames(covars)
+        # df_norm <- do.call(rbind, out[[1]])
+        # df_pso <- do.call(rbind, out[[2]])
+        # df_all <- rbind(df_norm, df_pso)
+        df_all <- merge(covars, out)
         df_all
     }
 )
@@ -171,7 +185,7 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         lims(x = r, y = r) +
         labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-    ggsave(sprintf("fig/noGT/diag/xy_%s.png", x))
+    ggsave(sprintf("fig/noGT/diag/xy_%s_%s.png", x, method))
     
     g <- ggplot(mdf) +
         aes_string(x, "discrepancy") +
@@ -182,7 +196,7 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
         geom_smooth() +
         labs(x = x, y = "Discrepancy")
 
-    ggsave(sprintf("fig/noGT/diag/disc_%s.png", x))
+    ggsave(sprintf("fig/noGT/diag/disc_%s_%s.png", x, method))
 }
 
 # stop()
@@ -208,7 +222,7 @@ g <- ggplot(mdf) +
     ) +
     labs(x = "Gene", y = "Discrepancy")
 
-ggsave("fig/noGT/diag/disc_gene_box.png")
+ggsave(sprintf("fig/noGT/diag/disc_gene_box_%s.png", method))
 
 
 g <- ggplot() +

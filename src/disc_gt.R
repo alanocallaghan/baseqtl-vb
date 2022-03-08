@@ -5,38 +5,30 @@ library("rstan")
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--method",
-    default = "vb",
     type = "character"
 )
-parser$add_argument(
-    "-t", "--tolerance",
-    default = 1e-2,
-    type = "double"
-)
-
 args <- parser$parse_args()
-
-tol <- args[["tolerance"]]
 
 optimizing <- function(...) {
     rstan::optimizing(..., draws = 1000)
 }
 vb <- function(...) {
     # rstan::vb(..., grad_samples = 5, elbo_samples = 1000, tol_rel_obj = 1e-3)
-    for (i in 1:10) {
-        f <- try(rstan::vb(..., tol_rel_obj = tol, iter = 20000))
+    while (TRUE) {
+        f <- try(rstan::vb(..., tol_rel_obj = 1e-3, iter = 20000))
         if (!inherits(f, "try-error")) {
             return (f)
         }
     }
 }
 sampling <- function(...) {
-    rstan::sampling(..., chains = 4, open_progress = FALSE)
+    rstan::sampling(..., chains = 1, open_progress = FALSE)
 }
 
 if (is.null(method <- args[["method"]])) {
     method <- "vb"
 }
+
 fun <- match.fun(method)
 
 # probs <- c(0.005, 0.025, 0.25, 0.50, 0.75, 0.975, 0.995)
@@ -50,20 +42,19 @@ genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
 ls_mat <- readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/scaled_gc_libsize.rds")
 
-mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
+disc <- readRDS("rds/GT_discrepancies_vb.rds")
+
 fit_stan <- function(i) {
-    gene <- genes[[i]]
-    cat(i, "/", length(genes), "\n")
-    gene_datas <- readRDS(
-        sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, gene)
-    )
+    line <- disc[i, ]
+    gene <- line[["gene"]]
+    snp <- line[["snp"]]
+    file <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, gene)
+    gene_data <- readRDS(file)
+    snp_in <- gene_data[[snp]]
+    gene_datas <- readRDS(file)
     snps_data <- lapply(
-        names(gene_datas),
-        function(snp) {
-            if (file.exists(file <- sprintf("rds/GT/%s/%s_%s.rds", mtol, gene, snp))) {
-                return(file)
-            }
-            x <- gene_datas[[snp]]
+        gene_datas,
+        function(x) {
             out <- in.neg.beta.prob.eff2(x)
             out$cov <- cbind(out$cov, ls_mat[, gene])
             out$K <- 2
@@ -97,32 +88,19 @@ fit_stan <- function(i) {
             tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
             tab$gene <- gene
             tab$time <- time[["elapsed"]]
-            tab$snp <- snp
-            saveRDS(tab, file)
             tab
         }
     )
     names(snps_data) <- names(gene_datas)
     snps_data
 }
-all_stan_res <- parallel::mclapply(
-    seq_along(genes),
-    function(i) {
-        fit_stan(i)
-        # file <- sprintf("rds/GT/%s/%s.rds", method, genes[[i]])
-        # if (file.exists(file)) {
-        #     readRDS(file)
-        # } else {
-        #     x <- tryCatch(
-        #         error = function(e) list()
-        #     )
-        #     saveRDS(x, file)
-        #     x
-        # }
-    }, mc.cores = 16
-)
-cat("Done!\n")
-# names(all_stan_res) <- genes
+all_stan_res <- lapply(1:nrow(disc), fit_stan)
 
-# saveRDS(all_stan_res, sprintf("rds/GT/%s/all.rds", method))
+
+
+names(all_stan_res) <- genes
+
+
+
+saveRDS(all_stan_res, sprintf("rds/%s/disc.rds", method))
 

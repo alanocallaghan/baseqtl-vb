@@ -12,7 +12,7 @@ rule all:
 rule run:
     threads: 16
     resources: runtime="10:00:00"
-    input: "run-{type}.R"
+    input: "src/run-{type}.R"
     output: "{type}/{method}/all.rds"
     shell:
         """

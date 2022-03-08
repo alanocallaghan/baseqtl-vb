@@ -6,3 +6,4 @@ fig
 *.pdf
 *.png
 *.json
+pymc_samples/*

@@ -15,6 +15,7 @@ parser$add_argument(
 args <- parser$parse_args()
 
 if (is.null(method <- args[["method"]])) {
+    method <- "sampling"
     method <- "vb"
 }
 mname <- switch(method,
@@ -34,21 +35,29 @@ dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMi
 
 
 outfiles <- list.files(sprintf("rds/GT/%s/", method), pattern = "ENSG*", full.names = TRUE)
+genes <- unique(gsub(".*(ENSG\\d+).*", "\\1", outfiles))
 infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
 
 
-dfs <- lapply(
-    1:length(infiles),
+dfs <- parallel::mclapply(
+    1:length(genes),
     function(i) {
-        cat(i, "/", length(infiles), "\n")
+        cat(i, "/", length(genes), "\n")
+        gene <- genes[[i]]
         infile <- infiles[[i]]
-        outfile <- outfiles[[i]]
-        out <- readRDS(outfile)
+        outfiles <- list.files(
+            sprintf("rds/GT/%s/", method),
+            pattern = paste0(gene, ".*"),
+            full.names = TRUE
+        )
+        # outfile <- outfiles[[i]]
+        out <- do.call(rbind, lapply(outfiles, readRDS))
         inp <- readRDS(infile)
         if (!length(out)) {
             return(list())
         }
-        covars <- lapply(inp,
+        snp <- out$snp
+        covars <- lapply(inp[snp],
             function(x) {
                 inp1 <- in.neg.beta.prob.eff2(x)
                 data.frame(
@@ -63,45 +72,21 @@ dfs <- lapply(
             }
         )
         covars <- do.call(rbind, covars)
-        df <- do.call(rbind, out)
+        # df <- do.call(rbind, out)
+        df <- out
         df <- cbind(covars, df)
-        df$snp <- names(out)
+        df$snp <- snp
         df
-    }
+    }, mc.cores = 16
     # ,
     # infiles,
     # outfiles,
     # SIMPLIFY = FALSE
 )
 
-
-for (i in 1:length(dfs)) {
-    if (length(dfs[[i]])) {
-        dfs[[i]]$gene <- gsub(".*(ENSG\\d+).*", "\\1", outfiles[[i]])
-    }
-}
 approx_res_df <- do.call(rbind, dfs)
 
-# all_stan_res <- readRDS(sprintf("rds/GT/%s/all.rds", method))
-# table(as.logical(sapply(all_stan_res, length)))
-# FALSE  TRUE 
-#     6   100 
 
-# approx_res_df <- do.call(
-#     rbind,
-#     lapply(
-#         all_stan_res,
-#         function(x) {
-#             if (is.null(x)) x <- list()
-#             df <- do.call(rbind, x)
-#             df$rSNP <- names(x)
-#             df
-#         }
-#     )
-# )
-
-# rownames(approx_res_df) <- NULL
-# if (is.null(approx_res_df$gene)) approx_res_df$gene <- approx_res_df$feature
 
 sample_res_df <- do.call(
     rbind,
@@ -111,9 +96,16 @@ sample_res_df <- do.call(
         }
     )
 )
+
+sample_res_df <- sample_res_df[sample_res_df$n_eff > 1000 & sample_res_df$Rhat < 1.05, ]
+if (method == "sampling") {
+    approx_res_df <- approx_res_df[approx_res_df$n_eff > 1000 & approx_res_df$Rhat < 1.05, ]
+}
+
 approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$snp, sep = "_")
 # approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$rSNP, sep = "_")
 sample_res_df$test <- paste(sample_res_df$Gene_id, sample_res_df$tag , sep = "_")
+
 
 approx_res_df$null.95 <- sign(approx_res_df$"2.5%") == sign(approx_res_df$"97.5%")
 approx_res_df$null.50 <- sign(approx_res_df$"25.0%") == sign(approx_res_df$"75.0%")
@@ -161,28 +153,43 @@ mdf$Null.95.50 <- factor(mdf$Null.95.50, levels = flev)
 mdf$discrepancy <- mdf$mean - mdf$log2_aFC_mean
 
 
-for (x in c("gene", "time", "n_ase", "mean_count", "sd_count", "n_wt", "n_het", "n_hom")) {
+g <- ggplot(mdf) +
+    aes_string("mean", "mean_count") +
+    geom_point(size = 0.8)
+ggsave("tmp1.png")
+
+## not se mean but other hmc se
+diag_vars <- c(
+    "gene", "Rhat.HMC", "n_eff.HMC", "time", "n_ase",
+    "log2_aFC_se_mean", "log2_aFC_sd",
+    "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
+)
+
+for (x in diag_vars) {
     scale <- if (x == "gene") scale_colour_discrete(guide="none") else scale_colour_viridis()
-    g <- ggplot(mdf) +
-        aes_string("mean", "log2_aFC_mean", colour = x) +
+    
+    g <- ggplot(mdf[order(mdf[[x]]), ]) +
+        aes_string("log2_aFC_mean", "mean", colour = x) +
         geom_point(size = 0.8) +
         scale +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         lims(x = r, y = r) +
-        labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-    ggsave(sprintf("fig/GT/diag/%s_%s.png", x, method))
+        labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
+    ggsave(sprintf("fig/GT/diag/%s_%s.png", x, method), width = 7, height = 7)
     
     g <- ggplot(mdf) +
-        aes_string(x, "discrepancy") +
+        aes_string(x, "abs(discrepancy)") +
         geom_point(size = 0.8) +
         # scale_colour_viridis() +
         # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         # lims(x = r, y = r) +
-        geom_smooth() +
+        geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")
+        ) +
         labs(x = x, y = "Discrepancy")
 
-    ggsave(sprintf("fig/GT/diag/disc_%s_%s.png", x, method))
+    ggsave(sprintf("fig/GT/diag/disc_%s_%s.png", x, method), width = 7, height = 7)
 }
+
 
 mdf$gf <- as.numeric(factor(mdf$gene))
 
@@ -209,29 +216,25 @@ g <- ggplot(mdf) +
 ggsave(sprintf("fig/GT/diag/disc_gene_box_%s.png", method))
 
 
-# stop()
-
-
-
 g <- ggplot() +
-    aes(approx_res_df$mean, sample_res_df$log2_aFC_mean) +
+    aes(sample_res_df$log2_aFC_mean, approx_res_df$mean) +
     geom_pointdensity() +
     scale_colour_viridis() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
-    labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all.png", method), width = 7, height = 7)
 
 
 mdf <- mdf[order(mdf$Null.99), ]
 
 g <- ggplot(mdf) +
-    aes(mean, log2_aFC_mean, colour = Null.99) +
+    aes(log2_aFC_mean, mean, colour = Null.99) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
-    labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_99.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.99.VB, HMC = mdf$null.99.HMC)
@@ -246,12 +249,14 @@ table(ADVI = mdf$null.99.VB, HMC = mdf$null.99.HMC)
 #   no     48   609
 #   yes    13 39546
 
-yardstick::sens_vec(factor(mdf$null.99.HMC), factor(mdf$null.99.VB))
+mkfac <- function(...) factor(..., levels = c("no", "yes"))
+
+yardstick::sens_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.99.VB))
 ## vb
 # [1] 0.7868852
 ## map
 # [1] 0.7088608
-yardstick::spec_vec(factor(mdf$null.99.HMC), factor(mdf$null.99.VB))
+yardstick::spec_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.99.VB))
 ## vb
 # [1] 0.9848338
 ## map
@@ -260,12 +265,12 @@ yardstick::spec_vec(factor(mdf$null.99.HMC), factor(mdf$null.99.VB))
 
 mdf <- mdf[order(mdf$Null.95), ]
 g <- ggplot(mdf) +
-    aes(mean, log2_aFC_mean, colour = Null.95) +
+    aes(log2_aFC_mean, mean, colour = Null.95) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
-    labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_95.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.95.VB, HMC = mdf$null.95.HMC)
@@ -281,30 +286,30 @@ table(ADVI = mdf$null.95.VB, HMC = mdf$null.95.HMC)
 #   yes    21 38789
 
 
-yardstick::sens_vec(factor(mdf$null.95.HMC), factor(mdf$null.95.VB))
+yardstick::sens_vec(mkfac(mdf$null.95.HMC), mkfac(mdf$null.95.VB))
 ## map
 # [1] 0.6432749
 ## vb
 # [1] 0.8432836
-yardstick::spec_vec(factor(mdf$null.95.HMC), factor(mdf$null.95.VB))
+yardstick::spec_vec(mkfac(mdf$null.95.HMC), mkfac(mdf$null.95.VB))
 
 
-yardstick::sens_vec(factor(mdf$null.99.HMC), factor(mdf$null.95.VB))
+yardstick::sens_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.95.VB))
 ## map
 # [1] 0.7594937
 ## vb
 # [1] 0.9672131
-yardstick::spec_vec(factor(mdf$null.99.HMC), factor(mdf$null.95.VB))
+yardstick::spec_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.95.VB))
 
 
 mdf <- mdf[order(mdf$Null.95.50), ]
 g <- ggplot(mdf) +
-    aes(mean, log2_aFC_mean, colour = Null.95.50) +
+    aes(log2_aFC_mean, mean, colour = Null.95.50) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
-    labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_all_categorical_50.png", method), width = 7, height = 7)
 
 table(ADVI = mdf$null.50.VB, HMC = mdf$null.50.HMC)
@@ -318,12 +323,12 @@ table(ADVI = mdf$null.50.VB, HMC = mdf$null.50.HMC)
 # ADVI     no   yes
 #   no   1375  1935
 #   yes  3375 43375
-yardstick::sens_vec(factor(mdf$null.50.HMC), factor(mdf$null.50.VB))
+yardstick::sens_vec(mkfac(mdf$null.50.HMC), mkfac(mdf$null.50.VB))
 ## vb
 # [1] 0.5391671
 ## map
 # [1] 0.2894737
-yardstick::spec_vec(factor(mdf$null.50.HMC), factor(mdf$null.50.VB))
+yardstick::spec_vec(mkfac(mdf$null.50.HMC), mkfac(mdf$null.50.VB))
 ## map
 # [1] 0.9572942
 ## vb
@@ -331,25 +336,25 @@ yardstick::spec_vec(factor(mdf$null.50.HMC), factor(mdf$null.50.VB))
 
 
 
-yardstick::sens_vec(factor(mdf$null.95.HMC), factor(mdf$null.50.VB))
+yardstick::sens_vec(mkfac(mdf$null.95.HMC), mkfac(mdf$null.50.VB))
 ## map
 # [1] 0.9239766
 ## vb
 # [1] 0.9850746
 
-yardstick::spec_vec(factor(mdf$null.95.HMC), factor(mdf$null.50.VB))
+yardstick::spec_vec(mkfac(mdf$null.95.HMC), mkfac(mdf$null.50.VB))
 ## map
 # [1] 0.9368197
 ## vb
 # [1] 0.6046105
 
 
-yardstick::sens_vec(factor(mdf$null.99.HMC), factor(mdf$null.50.VB))
+yardstick::sens_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.50.VB))
 ## map
 # [1] 0.9367089
 ## vb
 # [1] 1
-yardstick::spec_vec(factor(mdf$null.99.HMC), factor(mdf$null.50.VB))
+yardstick::spec_vec(mkfac(mdf$null.99.HMC), mkfac(mdf$null.50.VB))
 ## map
 # [1] 0.9352554
 ## vb
@@ -545,12 +550,12 @@ stopifnot(all(ss$test == approx_res_df_sub$test))
 r2 <- range(c(ss$log2_aFC_mean, approx_res_df_sub$mean))
 
 g <- ggplot() +
-    aes(approx_res_df_sub$mean, ss$log2_aFC_mean) +
+    aes(ss$log2_aFC_mean, approx_res_df_sub$mean) +
     geom_pointdensity() +
     scale_colour_viridis() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r2, y = r2) +
-    labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", method))
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc.png", method), width = 7, height = 7)
 
 mdf2 <- merge(approx_res_df_sub, ss, by = "test", suffix = c(".VB", ".HMC"))
@@ -573,22 +578,22 @@ mdf2$Null.95.50 <- factor(mdf2$Null.95.50, levels = flev)
 
 mdf2 <- mdf2[order(mdf2$Null.99), ]
 g <- ggplot(mdf2) +
-    aes(mean, log2_aFC_mean, colour = Null.99) +
+    aes(log2_aFC_mean, mean, colour = Null.99) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r2, y = r2) +
-    labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", method))
 
 # ggMarginal(g)
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_99.png", method), width = 7, height = 7)
 
-yardstick::sens_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.99.VB))
+yardstick::sens_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.99.VB))
 ## vb
 # [1] 0.8
 ## map
 # [1] 0.5294118
-yardstick::spec_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.99.VB))
+yardstick::spec_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.99.VB))
 ## map
 # [1] 0.9553957
 
@@ -609,29 +614,29 @@ table(ADVI = mdf2$null.99.VB, HMC = mdf2$null.99.HMC)
 
 mdf2 <- mdf2[order(mdf2$Null.95), ]
 g <- ggplot(mdf2) +
-    aes(mean, log2_aFC_mean, colour = Null.95) +
+    aes(log2_aFC_mean, mean, colour = Null.95) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r2, y = r2) +
-    labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", method))
 
 # ggMarginal(g)
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_95.png", method), width = 7, height = 7)
 
-yardstick::sens_vec(factor(mdf2$null.95.HMC), factor(mdf2$null.95.VB))
+yardstick::sens_vec(mkfac(mdf2$null.95.HMC), mkfac(mdf2$null.95.VB))
 ## vb
 # [1] 0.7931034
 # map
 # [1] 0.325
-yardstick::spec_vec(factor(mdf2$null.95.HMC), factor(mdf2$null.95.VB))
+yardstick::spec_vec(mkfac(mdf2$null.95.HMC), mkfac(mdf2$null.95.VB))
 ## map
 # [1] 0.9556962
 
-yardstick::sens_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.95.VB))
+yardstick::sens_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.95.VB))
 ## map
 # [1] 0.5882353
-yardstick::spec_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.95.VB))
+yardstick::spec_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.95.VB))
 ## map
 # [1] 0.9366906
 
@@ -651,12 +656,12 @@ table(ADVI = mdf2$null.95.VB, HMC = mdf2$null.95.HMC)
 
 mdf2 <- mdf2[order(mdf2$Null.95.50), ]
 g <- ggplot(mdf2) +
-    aes(mean, log2_aFC_mean, colour = Null.95.50) +
+    aes(log2_aFC_mean, mean, colour = Null.95.50) +
     geom_point() +
     scale_colour_brewer(palette = "Paired", limits = levs) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r2, y = r2) +
-    labs(x = sprintf("%s estimate", method), y = "MCMC estimate")
+    labs(x = "MCMC estimate", y = sprintf("%s estimate", method))
 
 # ggMarginal(g)
 ggsave(file = sprintf("fig/GT/estimates/%s_mcmc_categorical_50.png", method), width = 7, height = 7)
@@ -674,25 +679,25 @@ table(ADVI = mdf2$null.50.VB, HMC = mdf2$null.50.HMC)
 #   no  390 122
 #   yes 252 660
 
-yardstick::sens_vec(factor(mdf2$null.50.HMC), factor(mdf2$null.50.VB))
+yardstick::sens_vec(mkfac(mdf2$null.50.HMC), mkfac(mdf2$null.50.VB))
 ## vb
 # [1] 0.6318408
 ## map
 # [1] 0.5294118
-yardstick::spec_vec(factor(mdf2$null.50.HMC), factor(mdf2$null.50.VB))
+yardstick::spec_vec(mkfac(mdf2$null.50.HMC), mkfac(mdf2$null.50.VB))
 ## map
 # [1] 0.8439898
 
-yardstick::sens_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.50.VB))
+yardstick::sens_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.50.VB))
 ## map
 # [1] 1
-yardstick::spec_vec(factor(mdf2$null.99.HMC), factor(mdf2$null.50.VB))
+yardstick::spec_vec(mkfac(mdf2$null.99.HMC), mkfac(mdf2$null.50.VB))
 ## map
 # [1] 0.6561151
-yardstick::sens_vec(factor(mdf2$null.95.HMC), factor(mdf2$null.50.VB))
+yardstick::sens_vec(mkfac(mdf2$null.95.HMC), mkfac(mdf2$null.50.VB))
 ## map
 # [1] 0.925
-yardstick::spec_vec(factor(mdf2$null.95.HMC), factor(mdf2$null.50.VB))
+yardstick::spec_vec(mkfac(mdf2$null.95.HMC), mkfac(mdf2$null.50.VB))
 ## map
 # [1] 0.7120253
 

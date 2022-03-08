@@ -7,16 +7,32 @@ parser$add_argument(
     "-m", "--method",
     type = "character"
 )
+parser$add_argument(
+    "-t", "--tolerance",
+    default = 1e-2,
+    type = "double"
+)
+
 args <- parser$parse_args()
+tol <- args[["tolerance"]]
 
 if (is.null(method <- args[["method"]])) {
-    method <- "optimizing"
+    method <- "vb"
 }
 optimizing <- function(...) {
     rstan::optimizing(..., draws = 1000)
 }
+vb <- function(...) {
+    # rstan::vb(..., grad_samples = 5, elbo_samples = 1000, tol_rel_obj = 1e-3)
+    for (i in 1:5) {
+        f <- try(rstan::vb(..., tol_rel_obj = tol, iter = 20000))
+        if (!inherits(f, "try-error")) {
+            return (f)
+        }
+    }
+}
 sampling <- function(...) {
-    rstan::sampling(..., chains = 1, open_progress = FALSE)
+    rstan::sampling(..., chains = 4, open_progress = FALSE)
 }
 fun <- match.fun(method)
 
@@ -39,22 +55,25 @@ covariates <- list(
     Psoriasis_skin = readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/Psoriasis_skin_scaled_gc_libsize.rds")
 )
 
-
+mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
 fit_stan <- function(gene) {
     files <- c(
         normal_skin = sprintf("%s/refbias.%s.normal_skin.noGT.stan.input.rds", dir, gene),
         Psoriasis_skin = sprintf("%s/refbias.%s.Psoriasis_skin.noGT.stan.input.rds", dir, gene)
     )
     lapply(names(files),
-        function(n) {
-            gene_data_cond <- readRDS(files[[n]])
+        function(condition) {
+            gene_data_cond <- readRDS(files[[condition]])
             snps_this_cond <- names(gene_data_cond)
             lapply(snps_this_cond,
                 function(snp) {
+                    if (file.exists(file <- sprintf("rds/noGT/%s/%s_%s_%s.rds", mtol, gene, snp, condition))) {
+                        return(file)
+                    }
                     snp_in <- gene_data_cond[[snp]]
                     data <- in.neg.beta.noGT.eff2(
                         snp_in,
-                        covar = covariates[[n]][names(snp_in$NB$counts), gene, drop = FALSE]
+                        covar = covariates[[condition]][names(snp_in$NB$counts), gene, drop = FALSE]
                     )
                     data$k <- 3
                     data$aveP <- c(0, 0, 0)
@@ -92,7 +111,8 @@ fit_stan <- function(gene) {
                     tab$gene <- gene
                     tab$snp <- snp
                     tab$time <- time[["elapsed"]]
-                    tab$condition <- n
+                    tab$condition <- condition
+                    saveRDS(tab, file)
                     tab
                 }
             )
@@ -102,20 +122,23 @@ fit_stan <- function(gene) {
 all_stan_res <- parallel::mclapply(
     seq_along(genes),
     function(i) {
-        cat(i, "/", length(genes), "\n")
         gene <- genes[[i]]
-        file <- sprintf("rds/noGT/%s/%s.rds", method, gene)
-        if (file.exists(file)) {
-            readRDS(file)
-        } else {
-            x <- tryCatch(
-                fit_stan(gene),
-                error = function(e) list()
-            )
-            saveRDS(x, file)
-        }
+        cat(i, "/", length(genes), "\n")
+        fit_stan(gene)
+        # file <- sprintf("rds/noGT/%s/%s.rds", method, gene)
+        # if (file.exists(file)) {
+        #     readRDS(file)
+        # } else {
+        #     x <- tryCatch(
+        #         fit_stan(gene),
+        #         error = function(e) list()
+        #     )
+        #     saveRDS(x, file)
+        #     x
+        # }
     }, mc.cores = 16
 )
+cat("Done!\n")
 names(all_stan_res) <- genes
 
-saveRDS(all_stan_res, sprintf("rds/noGT/%s/all.rds", method))
+# saveRDS(all_stan_res, sprintf("rds/noGT/%s/all.rds", method))

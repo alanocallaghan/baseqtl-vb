@@ -2,8 +2,8 @@
 #SBATCH --partition=skylake
 #SBATCH -o %j.out 
 #SBATCH -e %j.err
-#SBATCH --time=50:00:00
+#SBATCH --time=10:00:00
 
-# executable 
-conda activate snakemake
-snakemake -j 3 --profile slurm
+. ~/miniconda3/etc/profile.d/conda.sh
+conda activate
+snakemake -q -j 100 --profile slurm

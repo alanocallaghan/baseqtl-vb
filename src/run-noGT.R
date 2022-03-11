@@ -8,10 +8,21 @@ parser$add_argument(
     type = "character"
 )
 parser$add_argument(
+    "-s", "--snp",
+    # default = 1e-2,
+    type = "character"
+)
+parser$add_argument(
+    "-g", "--gene",
+    # default = 1e-2,
+    type = "character"
+)
+parser$add_argument(
     "-t", "--tolerance",
     default = 1e-2,
     type = "double"
 )
+
 
 args <- parser$parse_args()
 tol <- args[["tolerance"]]

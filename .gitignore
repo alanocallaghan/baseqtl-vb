@@ -7,3 +7,4 @@ fig
 *.png
 *.json
 pymc_samples/*
+*.rds

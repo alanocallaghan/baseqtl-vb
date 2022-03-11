@@ -10,24 +10,31 @@ theme_set(theme_bw())
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--method",
+    default = "sampling",
     type = "character"
 )
-args <- parser$parse_args()
+parser$add_argument(
+    "-t", "--tolerance",
+    default = 1e-2,
+    type = "double"
+)
 
-if (is.null(method <- args[["method"]])) {
-    method <- "vb"
-}
+args <- parser$parse_args()
+tol <- args[["tolerance"]]
+method <- args[["method"]]
+
 mname <- switch(method,
     "vb" = "ADVI",
     "optimizing" = "MAP",
     "sampling" = "HMC"
 )
+mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
 
 dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/psoriasis/refbias/Btrecase/SpikePrior/fisher001/rna/"
 
 # files <- list.files(dir)
 # files <- grep("refbias", files, value = TRUE)
-outfiles <- list.files(sprintf("rds/noGT/%s/", method), pattern = "ENSG*", full.names=TRUE)
+outfiles <- list.files(sprintf("rds/noGT/%s/", mtol), pattern = "ENSG*", full.names=TRUE)
 genes <- unique(gsub(".*(ENSG\\d+)..*", "\\1", outfiles))
 
 infiles <- list(
@@ -50,20 +57,20 @@ process_nogt <- function(x) {
         n_hom = sum(abs(inp1$gase) == 2)
     )
 }
-dfs <- lapply(
+dfs <- parallel::mclapply(
     1:length(genes),
     function(i) {
-        cat(i, "/", length(outfiles), "\n")
+        cat(i, "/", length(genes), "\n")
         infile_norm <- infiles[[1]][[i]]
         infile_pso <- infiles[[2]][[i]]
         
         outfiles_norm <- list.files(
-            "rds/noGT/vb/",
+            sprintf("rds/noGT/%s/", mtol),
             pattern = sprintf("%s_.*_normal_skin.rds", genes[[i]]),
             full.names = TRUE
         )
         outfiles_pso <- list.files(
-            "rds/noGT/vb/",
+            sprintf("rds/noGT/%s/", mtol),
             pattern = sprintf("%s_.*_Psoriasis_skin.rds", genes[[i]]),
             full.names = TRUE
         )
@@ -89,7 +96,8 @@ dfs <- lapply(
         # df_all <- rbind(df_norm, df_pso)
         df_all <- merge(covars, out)
         df_all
-    }
+    },
+    mc.cores = 8
 )
 
 
@@ -176,16 +184,37 @@ mdf$discrepancy <- mdf$mean - mdf$log2_aFC_mean
 
 mdf <- mdf %>% mutate(allele_freq = (n_het + (n_hom * 2)) / ((n_wt + n_het + n_hom) * 2))
 
+
+mdf2 <- mdf[mdf$Rhat.VB < 1.05 & mdf$Rhat.HMC < 1.05 & mdf$n_eff.VB > 500 & mdf$n_eff.HMC > 500, ]
+
+g <- ggplot(mdf2) +
+    aes_string("log2_aFC_mean", "mean", colour = "log2_aFC_se_mean") +
+    geom_point(size = 0.8) +
+    scale_colour_viridis(name = "SE (x)") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    lims(x = r, y = r) +
+    labs(x = "Old estimate", y = "New estimate")
+ggsave("fig/noGT/estimates/se1.png", width = 7, height = 7)
+g <- ggplot(mdf2) +
+    aes_string("log2_aFC_mean", "mean", colour = "se_mean") +
+    geom_point(size = 0.8) +
+    scale_colour_viridis(name = "SE (y)") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    lims(x = r, y = r) +
+    labs(x = "Old estimate", y = "New estimate")
+ggsave("fig/noGT/estimates/se2.png", width = 7, height = 7)
+stop()
+
 for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_count", "sd_count", "n_wt", "n_het", "n_hom")) {
     scale <- if (x == "gene") scale_colour_discrete(guide="none") else scale_colour_viridis()
-    g <- ggplot(mdf) +
-        aes_string("mean", "log2_aFC_mean", colour = x) +
-        geom_point(size = 0.8) +
-        scale +
-        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-        lims(x = r, y = r) +
-        labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-    ggsave(sprintf("fig/noGT/diag/xy_%s_%s.png", x, method))
+    # g <- ggplot(mdf) +
+    #     aes_string("mean", "log2_aFC_mean", colour = x) +
+    #     geom_point(size = 0.8) +
+    #     scale +
+    #     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    #     lims(x = r, y = r) +
+    #     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+    # ggsave(sprintf("fig/noGT/diag/xy_%s_%s.png", x, mtol), width = 7, height = 7)
     
     g <- ggplot(mdf) +
         aes_string(x, "discrepancy") +
@@ -193,10 +222,10 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
         # scale_colour_viridis() +
         # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         # lims(x = r, y = r) +
-        geom_smooth() +
+        geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
         labs(x = x, y = "Discrepancy")
 
-    ggsave(sprintf("fig/noGT/diag/disc_%s_%s.png", x, method))
+    ggsave(sprintf("fig/noGT/diag/disc_%s_%s.png", x, mtol), width = 7, height = 7)
 }
 
 # stop()
@@ -206,7 +235,7 @@ tmp <- mdf %>%
     group_by(gene) %>%
     summarise(mean_disc = mean(discrepancy), sum_disc = sum(abs(discrepancy) > 0.3))
 tmp %>% arrange(-sum_disc)
-gg <- tmp %>% arrange(-sum_disc) %>% top_n(5) %>% pull(gene)
+gg <- tmp %>% arrange(-sum_disc) %>% top_n(5, wt = sum_disc) %>% pull(gene)
 
 g <- ggplot(mdf) +
     aes(gene, discrepancy, colour = gene %in% gg) +
@@ -215,24 +244,24 @@ g <- ggplot(mdf) +
     # scale_colour_viridis() +
     # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     # lims(x = r, y = r) +
-    geom_smooth() +
+    geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
     theme(
         axis.text.x = element_blank(), axis.ticks.x = element_blank(),
         panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank()
     ) +
     labs(x = "Gene", y = "Discrepancy")
 
-ggsave(sprintf("fig/noGT/diag/disc_gene_box_%s.png", method))
+ggsave(sprintf("fig/noGT/diag/disc_gene_box_%s.png", mtol), width = 7, height = 7)
 
 
-g <- ggplot() +
-    aes(approx_res_df$mean, sample_res_df$log2_aFC_mean) +
-    geom_pointdensity() +
-    scale_colour_viridis() +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    lims(x = r, y = r) +
-    labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all.png", method), width = 7, height = 7)
+# g <- ggplot() +
+#     aes(approx_res_df$mean, sample_res_df$log2_aFC_mean) +
+#     geom_pointdensity() +
+#     scale_colour_viridis() +
+#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+#     lims(x = r, y = r) +
+#     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
+# ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all.png", mtol), width = 7, height = 7)
 
 
 mdf <- mdf[order(mdf$Null.99), ]
@@ -244,7 +273,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_99.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_99.png", mtol), width = 7, height = 7)
 
 
 
@@ -256,7 +285,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_95.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_95.png", mtol), width = 7, height = 7)
 
 mdf <- mdf[order(mdf$Null.95.50), ]
 g <- ggplot(mdf) +
@@ -266,7 +295,7 @@ g <- ggplot(mdf) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     lims(x = r, y = r) +
     labs(x = sprintf("%s estimate", mname), y = "MCMC estimate")
-ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_50.png", method), width = 7, height = 7)
+ggsave(file = sprintf("fig/noGT/estimates/%s_mcmc_all_categorical_50.png", mtol), width = 7, height = 7)
 
 
 summ <- mdf %>%
@@ -291,5 +320,5 @@ ggplot() +
     ) +
     geom_vline(xintercept = median(mdf$time), linetype = "dashed") +
     labs(x = "Time (s)", y = "Frequency")
-ggsave(sprintf("fig/noGT/time/time_dist_all_%s.png", method), width = 6, height = 6)
+ggsave(sprintf("fig/noGT/time/time_dist_all_%s.png", mtol), width = 6, height = 6)
 

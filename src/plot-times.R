@@ -13,6 +13,7 @@ theme_set(theme_bw())
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--model",
+    default = "GT",
     type = "character"
 )
 parser$add_argument(
@@ -21,52 +22,44 @@ parser$add_argument(
     type = "double"
 )
 
+maxRhat <- 1.1 ## from baseqtl-paper repo
+minEff <- 500 ## from stan docs (-ish)
 
 args <- parser$parse_args()
 tol <- args[["tolerance"]]
 
-if (is.null(model <- args[["model"]])) {
-    model <- "GT"
-    model <- "noGT"
-}
+model <- args[["model"]]
+
+# fpath <- sprintf("fig_%1.0e", tol)
+fpath <- "fig"
 
 # "optimizing",
-dfs <- lapply(c("vb", "sampling"),
-    function(m) {
-        cat(m, "\n")
-        mtol <- if (m == "vb") sprintf("%s_%1.0e", m, tol) else m
+methods <- c("vb", "sampling")
+dfs <- lapply(methods,
+    function(method) {
+        cat(method, "\n")
+        # mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
+        mtol <- method
         path <- file.path("rds", model, mtol)
         f <- list.files(path = path, pattern = "ENSG.*.rds", full.names = TRUE)
         input <- lapply(f, readRDS)
         if (model == "noGT") {
-            # input <- lapply(input, 
-            #     function(x) {
-            #         if (!length(x)) return(NULL)
-            #         c(x[[1]], x[[2]])
-            #     }
-            # )
-            # input <- Reduce(c, input)
             df <- do.call(rbind, input)
             df <- as.data.frame(df)
             df$test <- paste(df$gene, df$snp , sep = "_")
         } else {
-            # dfs <- lapply(input, function(x) {
-                # d <- do.call(rbind, x)
-                # d$snp <- names(x)
-                # d
-            # })
             df <- do.call(rbind, input)
             df <- as.data.frame(df)
             df$test <- paste(df$gene, df$snp , sep = "_")
         }
-        if (m == "sampling") {
-            df <- df[df$n_eff > 1000 & df$Rhat < 1.05, ]
-        } else if (m == "vb") {
-            ## from PSIS paper, arxiv 1507.02646
-            df <- df[df$khat < 0.7, ]
-        }
+        # if (method == "sampling") {
+        #     df <- df[df$n_eff > 500 & df$Rhat < 1.05, ]
+        # } else if (method == "vb") {
+        #     ## from PSIS paper, arxiv 1507.02646
+        #     # df <- df[df$khat < 0.7, ]
+        # }
         
-        df$method <- gsub("old/", "", m)
+        df$method <- gsub("old/", "", method)
         ## TRUE means that the HPD interval is one side of zero (sig)
         ## FALSE means it overlaps zero (null)
         df$null.95 <- sign(df$"2.5%") == sign(df$"97.5%")
@@ -83,21 +76,30 @@ dfs <- lapply(c("vb", "sampling"),
     }
 )
 
-
-by <- if (model == "GT") c("test", "gene", "snp") else c("test", "gene", "snp", "condition")
+names(dfs) <- methods
+by <- if (model == "GT") {
+    c("test", "gene", "snp")
+} else {
+    c("test", "gene", "snp", "condition")
+}
 # mdf <- merge(dfs[[1]], dfs[[2]], by = by, suffix = c(".vb", ".map"))
 # mdf <- merge(mdf, dfs[[3]], by = by, suffix = c("", ".hmc"))
-mdf <- merge(dfs[[1]], dfs[[2]], by = by, suffix = c(".vb", ".hmc"))
+mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
 mdf <- mdf %>%
     mutate(disc_vb = mean.vb - mean.hmc
     # , disc_map = mean.map - mean
 )
 
-
+# mtol <- sprintf("vb_%1.0e", tol)
+mtol <- sprintf("vb")
 if (model == "GT") {
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
-    outfiles <- list.files("rds/GT/vb/", pattern = "ENSG*", full.names = TRUE)
+    outfiles <- list.files(
+        sprintf("rds/GT/%s/", mtol),
+        pattern = "ENSG*",
+        full.names = TRUE
+    )
     genes <- unique(gsub(".*(ENSG\\d+).*", "\\1", outfiles))
     infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
 
@@ -132,7 +134,7 @@ if (model == "GT") {
 
     # files <- list.files(dir)
     # files <- grep("refbias", files, value = TRUE)
-    outfiles <- list.files("rds/noGT/vb/", pattern = "ENSG*", full.names=TRUE)
+    outfiles <- list.files(sprintf("rds/noGT/%s/", mtol), pattern = "ENSG*", full.names=TRUE)
     genes <- unique(gsub(".*(ENSG\\d+)..*", "\\1", outfiles))
 
     infiles <- list(
@@ -180,7 +182,6 @@ mdf <- merge(covar_df, mdf)
 
 mdf <- mdf %>% mutate(discrepancy = mean.hmc - mean.vb)
 
-
 x <- mdf %>%
     arrange(-abs(disc_vb)) %>%
     top_n(50, disc_vb) %>%
@@ -188,60 +189,34 @@ x <- mdf %>%
 
 saveRDS(x, sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol))
 
-sprintf("%s_%1.0e", m, tol)
-
-
 mname <- "ADVI"
 method <- "vb"
 r <- range(c(mdf$mean.hmc, mdf$mean.vb))
 ## not se mean but other hmc se
 diag_vars <- c(
     "gene",
-    # "Rhat.hmc",
+    "Rhat",
     "khat",
     "n_eff.hmc", "time.hmc", "n_ase",
     "se_mean.hmc", "sd.hmc",
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
-for (x in diag_vars) {
-    scale <- if (x == "gene") scale_colour_discrete(guide="none") else scale_colour_viridis()
-    
-    g <- ggplot(mdf[order(mdf[[x]]), ]) +
-        aes_string("mean.hmc", "mean.vb", colour = x) +
-        geom_point(size = 0.8) +
-        scale +
-        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-        lims(x = r, y = r) +
-        labs(x = "MCMC estimate", y = sprintf("%s estimate", mname))
-    ggsave(sprintf("fig_%1.0e/%s/diag/%s_%s.png", tol, model, x, method), width = 7, height = 7)
-    
+for (x in diag_vars) {    
     g <- ggplot(mdf) +
         aes_string(x, "abs(discrepancy)") +
         geom_point(size = 0.8) +
-        # scale_colour_viridis() +
-        # geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-        # lims(x = r, y = r) +
         geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")
         ) +
         labs(x = x, y = "Discrepancy")
 
-    ggsave(sprintf("fig_%1.0e/%s/diag/disc_%s_%s.png", tol, model, x, method), width = 7, height = 7)
+    ggsave(sprintf("%s/%s/diag/disc_%s_%s.png", fpath, model, x, method), width = 7, height = 7)
 }
 
 g <- ggplot(mdf) +
     aes(time.hmc, disc_vb) +
     geom_point() +
     labs(x = "Time taken for HMC (s)", y = "Discrepancy (ADVI - HMC)")
-ggsave(sprintf("fig_%1.0e/%s/diag/time_vb.png", tol, model), width = 7, height = 7)
-
-# g <- ggplot(mdf) +
-#     aes(time, disc_map) +
-#     geom_point() +
-#     labs(x = "Time taken for HMC (s)", y = "Discrepancy (MAP - HMC)")
-# ggsave(sprintf("fig/%s/diag/time_map.png", model))
-
-
-# quantile(mdf$time, probs = seq(0, 1, length.out = 20))
+ggsave(sprintf("%s/%s/diag/time_vb.png", fpath, model), width = 7, height = 7)
 
 mdf %>%
     group_by(gene) %>%
@@ -250,10 +225,14 @@ mdf %>%
     aes(nsnps, time) +
     geom_point() +
     geom_smooth(method = "lm", formula = y ~ x) -> g
-ggsave(sprintf("fig_%1.0e/%s/time/nsnp.png", tol, model), width = 7, height = 7)
+ggsave(sprintf("%s/%s/time/nsnp.png", fpath, model), width = 7, height = 7)
+
+
+mdf <- mdf[mdf$n_eff.hmc > minEff & mdf$Rhat < maxRhat, ]
+## from PSIS paper, arxiv 1507.02646
+# mdf <- mdf[mdf$khat < 0.7, ]
 
 gdf <- group_by(mdf, gene)
-
 
 lab_str <- "HMC: %s\nVB: %s\n"
 mdf$nullstr95 <- sprintf(lab_str,
@@ -274,52 +253,32 @@ null_ord <- null_levs[c(1, 3, 2, 4)]
 scale <- scale_colour_brewer(palette = "Paired", limits = null_levs, name = NULL)
 mdf$nullstr95 <- factor(mdf$nullstr95, levels = null_ord)
 mdf$nullstr99 <- factor(mdf$nullstr99, levels = null_ord)
+lim <- range(c(mdf$mean.hmc, mdf$mean.vb))
 
-g <- ggplot(mdf[order(mdf$nullstr95), ]) +
+mdfs <- mdf[mdf$mean.vb < 3, ]
+g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_point() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    lims(x = lim, y = lim) +
     labs(x = "MCMC estimate", y = "VB estimate") +
     scale
-ggsave(sprintf("fig_%1.0e/%s/estimates/pt-95.png", tol, model), width = 7, height = 7)
-g <- ggplot(mdf[order(mdf$nullstr99), ]) +
+ggsave(sprintf("%s/%s/estimates/point-estimates-95.png", fpath, model), width = 7, height = 7)
+
+g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_point() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    lims(x = lim, y = lim) +
     labs(x = "MCMC estimate", y = "VB estimate") +
     scale
-ggsave(sprintf("fig_%1.0e/%s/estimates/pt-99.png", tol, model), width = 7, height = 7)
+ggsave(sprintf("%s/%s/estimates/point-estimates-99.png", fpath, model), width = 7, height = 7)
 
-# stop()
 
 ## by snp
 for (t in c(99, 95)) {
     bc <- paste0("null.", t, ".hmc")
     levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
-    
-    # sens_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         sens_vec(
-    #             ## TRUE means that the HPD interval is one side of zero (sig)
-    #             ## FALSE means it overlaps zero (null)
-    #             truth = factor(mdf[[bc]], levels = c(TRUE, FALSE)),
-    #             estimate = factor(mdf[[column]], levels = c(TRUE, FALSE))
-    #         )
-    #     }
-    # )
-    # spec_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         spec_vec(
-    #             truth = factor(mdf[[bc]], levels = c(TRUE, FALSE)),
-    #             estimate = factor(mdf[[column]], levels = c(TRUE, FALSE))
-    #         )
-    #     }
-    # )
-
     sens_vb <- sapply(
         levs,
         function(x) {
@@ -340,7 +299,6 @@ for (t in c(99, 95)) {
             )
         }
     )
-
     time_vb <- sapply(
         levs,
         function(x) {
@@ -348,13 +306,7 @@ for (t in c(99, 95)) {
             sum(mdf$time.hmc[mdf[[column]]]) + sum(mdf$time.vb)
         }
     )
-    # time_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         sum(mdf$time.hmc[mdf[[column]]]) + sum(mdf$time.map)
-    #     }
-    # )
+
     g <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
@@ -367,21 +319,8 @@ for (t in c(99, 95)) {
         labs(x = "Sensitivity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time.hmc), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
-    ggsave(sprintf("fig_%1.0e/%s/time/time_vs_sens_vb_%s.png", tol, model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/time/time_vs_sens_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
-    # g <- ggplot() +
-    #     aes(sens_map, time_map) +
-    #     geom_line() +
-    #     geom_texthline(
-    #         yintercept = sum(mdf$time.hmc),
-    #         label = "Total time without screening",
-    #         vjust = -0.2,
-    #         linetype = "dashed"
-    #     ) +
-    #     ylim(0, max(sum(mdf$time.hmc), time_map)) +
-    #     labs(x = "Sensitivity", y = "Total time (s)") +
-    #     ggtitle("Sensitivity vs total time for MAP")
-    # ggsave(sprintf("fig/%s/time/time_vs_sens_map_%s.png", model, t), width = 5, height = 5)
     g <- ggplot() +
         aes(spec_vb, time_vb) +
         geom_line() +
@@ -394,31 +333,7 @@ for (t in c(99, 95)) {
         labs(x = "Specificity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time.hmc), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
-
-    ggsave(sprintf("fig_%1.0e/%s/time/time_vs_spec_vb_%s.png", tol, model, t), width = 5, height = 5)
-
-    # g <- ggplot() +
-    #     aes(spec_map, time_map) +
-    #     geom_line() +
-    #     geom_texthline(
-    #         yintercept = sum(mdf$time.hmc),
-    #         label = "Total time without screening",
-    #         vjust = -0.2,
-    #         linetype = "dashed"
-    #     ) +
-    #     ylim(0, max(sum(mdf$time.hmc), time_map)) +
-    #     labs(x = "Specificity", y = "Total time (s)") +
-    #     ggtitle("Specificity vs total time for MAP")
-    # ggsave(sprintf("fig/%s/time/time_vs_spec_map_%s.png", model, t), width = 5, height = 5)
-
-    # g <- ggplot() +
-    #     aes(1 - spec_map, sens_map) +
-    #     geom_line() +
-    #     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    #     labs(x = "1 - specificity", y = "Sensitivity") +
-    #     ggtitle("MAP") +
-    #     lims(x = 0:1, y = 0:1)
-    # ggsave(sprintf("fig/%s/roc/roc_map_%s.png", model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/time/time_vs_spec_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_vb, sens_vb) +
@@ -427,7 +342,7 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("VB") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig_%1.0e/%s/roc/roc_vb_%s.png", tol, model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t), width = 5, height = 5)
 }
 
 
@@ -438,48 +353,6 @@ gdf <- group_by(mdf, gene)
 for (t in c(99, 95)) {
     bc <- paste0("null.", t, ".hmc")
     levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
-    
-    # sens_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         gd <- gdf %>%
-    #             summarise(t = any(.data[[bc]]), e = any(.data[[column]]))
-            
-    #         mdf %>% mutate(
-    #                 t = gene %in% gd[["gene"]][gd$t],
-    #                 e = gene %in% gd[["gene"]][gd$e]
-    #             ) %>%
-    #             sens(
-    #                 ## TRUE means that the HPD interval is one side of zero (sig)
-    #                 ## FALSE means it overlaps zero (null)
-    #                 truth = factor(t, levels = c(TRUE, FALSE)),
-    #                 estimate = factor(e, levels = c(TRUE, FALSE))
-    #             ) %>%
-    #             pull(.estimate)
-    #     }
-    # )
-
-    # spec_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         gd <- gdf %>%
-    #             summarise(t = any(.data[[bc]]), e = any(.data[[column]]))
-    #         mdf %>% mutate(
-    #                 t = gene %in% gd[["gene"]][gd$t],
-    #                 e = gene %in% gd[["gene"]][gd$e]
-    #             ) %>%
-    #             spec(
-    #                 ## TRUE means that the HPD interval is one side of zero (sig)
-    #                 ## FALSE means it overlaps zero (null)
-    #                 truth = factor(t, levels = c(TRUE, FALSE)),
-    #                 estimate = factor(e, levels = c(TRUE, FALSE))
-    #             ) %>%
-    #             pull(.estimate)
-    #     }
-    # )
-    
     sens_vb <- sapply(
         levs,
         function(x) {
@@ -495,7 +368,6 @@ for (t in c(99, 95)) {
                 pull(.estimate)
         }
     )
-
     spec_vb <- sapply(
         levs,
         function(x) {
@@ -511,7 +383,6 @@ for (t in c(99, 95)) {
                 pull(.estimate)
         }
     )
-
     time_vb <- sapply(
         levs,
         function(x) {
@@ -521,15 +392,7 @@ for (t in c(99, 95)) {
             sum(mdf$time.hmc[mdf$gene %in% gd$gene[gd$e]]) + sum(mdf$time.vb)
         }
     )
-    # time_map <- sapply(
-    #     levs,
-    #     function(x) {
-    #         column <- sprintf("null.%s.map", x)
-    #         gd <- gdf %>%
-    #             summarise(e = any(.data[[column]]))
-    #         sum(mdf$time.hmc[mdf$gene %in% gd$gene[gd$e]]) + sum(mdf$time.map)
-    #     }
-    # )
+
     g <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
@@ -542,21 +405,8 @@ for (t in c(99, 95)) {
         labs(x = "Sensitivity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time.hmc), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
-    ggsave(sprintf("fig_%1.0e/%s/time/time_vs_sens_gene_vb_%s.png", tol, model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
-    # g <- ggplot() +
-    #     aes(sens_map, time_map) +
-    #     geom_line() +
-    #     geom_texthline(
-    #         yintercept = sum(mdf$time.hmc),
-    #         label = "Total time without screening",
-    #         vjust = -0.2,
-    #         linetype = "dashed"
-    #     ) +
-    #     ylim(0, max(sum(mdf$time.hmc), time_map)) +
-    #     labs(x = "Sensitivity", y = "Total time (s)") +
-    #     ggtitle("Sensitivity vs total time for MAP")
-    # ggsave(sprintf("fig/%s/time/time_vs_sens_gene_map_%s.png", model, t), width = 5, height = 5)
     g <- ggplot() +
         aes(spec_vb, time_vb) +
         geom_line() +
@@ -569,31 +419,7 @@ for (t in c(99, 95)) {
         labs(x = "Specificity", y = "Total time (s)") +
         ylim(0, max(sum(mdf$time.hmc), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
-
-    ggsave(sprintf("fig_%1.0e/%s/time/time_vs_spec_gene_vb_%s.png", tol, model, t), width = 5, height = 5)
-
-    # g <- ggplot() +
-    #     aes(spec_map, time_map) +
-    #     geom_line() +
-    #     geom_texthline(
-    #         yintercept = sum(mdf$time.hmc),
-    #         label = "Total time without screening",
-    #         vjust = -0.2,
-    #         linetype = "dashed"
-    #     ) +
-    #     ylim(0, max(sum(mdf$time.hmc), time_map)) +
-    #     labs(x = "Specificity", y = "Total time (s)") +
-    #     ggtitle("Specificity vs total time for MAP")
-    # ggsave(sprintf("fig/%s/time/time_vs_spec_gene_map_%s.png", model, t), width = 5, height = 5)
-
-    # g <- ggplot() +
-    #     aes(1 - spec_map, sens_map) +
-    #     geom_line() +
-    #     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    #     labs(x = "1 - specificity", y = "Sensitivity") +
-    #     ggtitle("MAP") +
-    #     lims(x = 0:1, y = 0:1)
-    # ggsave(sprintf("fig/%s/roc/roc_map_gene_%s.png", model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
     g <- ggplot() +
         aes(1 - spec_vb, sens_vb) +
@@ -602,21 +428,8 @@ for (t in c(99, 95)) {
         labs(x = "1 - specificity", y = "Sensitivity") +
         ggtitle("VB") +
         lims(x = 0:1, y = 0:1)
-    ggsave(sprintf("fig_%1.0e/%s/roc/roc_vb_gene_%s.png", tol, model, t), width = 5, height = 5)
+    ggsave(sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t), width = 5, height = 5)
 }
-
-
-
-# g <- ggplot(mdf) +
-#     aes(time.vb, time.map) +
-#     geom_pointdensity() +
-#     scale_x_log10() +
-#     scale_y_log10() +
-#     scale_colour_viridis() +
-#     theme(legend.position = "bottom") +
-#     # geom_abline(slope = 1, intercept = 0) +
-#     labs(x = "Time (s) for ADVI", y = "Time (s) for MAP")
-# ggsave(sprintf("fig/%s/time/time_vb_vs_map.png", model), width = 5, height = 5)
 
 g <- ggplot(mdf) +
     aes(time.hmc, time.vb) +
@@ -627,35 +440,18 @@ g <- ggplot(mdf) +
     theme(legend.position = "bottom") +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
-ggsave(sprintf("fig_%1.0e/%s/time/time_hmc_vs_vb.png", tol, model), width = 5, height = 5)
-
-# g <- ggplot(mdf) +
-#     aes(time.hmc, time.map) +
-#     geom_pointdensity() +
-#     scale_x_log10() +
-#     scale_y_log10() +
-#     scale_colour_viridis() +
-#     theme(legend.position = "bottom") +
-#     # geom_abline(slope = 1, intercept = 0) +
-#     labs(x = "Time (s) for HMC", y = "Time (s) for MAP")
-# ggsave(sprintf("fig/%s/time/time_hmc_vs_map.png", model), width = 5, height = 5)
-
-
+ggsave(sprintf("%s/%s/time/time_hmc_vs_vb.png", fpath, model), width = 5, height = 5)
 
 cn <- lapply(dfs, colnames)
 cn <- Reduce(intersect, cn)
 dfs_int <- lapply(dfs, function(x) x[, cn])
 df_int <- do.call(rbind, dfs_int)
 
-
-
 g <- ggplot(df_int) +
     aes(x = time.hmc, y = method) +
     scale_x_log10(name = "Time (s)") +
     stat_pointinterval()
-
 # ggsave("tmp.png")
-
 
 g <- ggplot(df_int) +
     aes(x = time, colour = method) +
@@ -664,5 +460,4 @@ g <- ggplot(df_int) +
     scale_colour_brewer(palette = "Set1", name = "Method") +
     ylab("Density") +
     theme(legend.position = "bottom")
-ggsave(sprintf("fig_%1.0e/%s/time/time_comparison.png", tol, model), width = 5, height = 5)
-
+ggsave(sprintf("%s/%s/time/time_comparison.png", fpath, model), width = 5, height = 5)

@@ -253,9 +253,10 @@ null_ord <- null_levs[c(1, 3, 2, 4)]
 scale <- scale_colour_brewer(palette = "Paired", limits = null_levs, name = NULL)
 mdf$nullstr95 <- factor(mdf$nullstr95, levels = null_ord)
 mdf$nullstr99 <- factor(mdf$nullstr99, levels = null_ord)
-lim <- range(c(mdf$mean.hmc, mdf$mean.vb))
 
 mdfs <- mdf[mdf$mean.vb < 3, ]
+lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
+
 g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_point() +

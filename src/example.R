@@ -1,6 +1,13 @@
 library("baseqtl")
 library("rstan")
 
+################################################################################
+##
+## GT
+##
+################################################################################
+
+# arbitrary gene/snp
 gene <- "ENSG00000015475"
 snp <- "17718119:G:T"
 
@@ -32,8 +39,16 @@ tab$snp <- snp
 
 
 
+################################################################################
+##
+## noGT
+##
+################################################################################
+
+
 dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/psoriasis/refbias/Btrecase/SpikePrior/fisher001/rna/"
 gene <- "ENSG00000002330"
+snp <- "63853645:C:T"
 
 covariates <- list(
     normal_skin = readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/normal_skin_scaled_gc_libsize.rds"),
@@ -49,7 +64,6 @@ results <- lapply(
     names(files),
     function(condition) {
         gene_data_cond <- readRDS(files[[condition]])
-        snp <- "63853645:C:T"
         snp_in <- gene_data_cond[[snp]]
         data <- in.neg.beta.noGT.eff2(
             snp_in,
@@ -60,6 +74,7 @@ results <- lapply(
         data$sdP <- c(0.0436991990773286, 0.34926955206545, 0.4920048983496)
         data$mixP <- c(-0.0460439385014068, -3.50655789731998, -4.19970507787993)
 
+        ## some of the entries seem to be missing the allelic imbalance ests
         model <- baseqtl:::stanmodels$noGT_nb_ase
         if (!is.null(data$ai0)) {
             model <- baseqtl:::stanmodels$noGT_nb_ase_refbias

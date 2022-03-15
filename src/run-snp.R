@@ -105,7 +105,7 @@ if (!args[["nogt"]]) {
         tab$time <- time[["elapsed"]]
         tab$snp <- snp
         file <- sprintf("rds/GT/%s/%s_%s.rds", mtol, gene, snp)
-        saveRDS(tab, file)
+        # saveRDS(tab, file)
         tab
     }
 } else {
@@ -176,7 +176,7 @@ if (!args[["nogt"]]) {
                 tab$time <- time[["elapsed"]]
                 tab$condition <- condition
                 file <- sprintf("rds/noGT/%s/%s_%s_%s.rds", mtol, gene, snp, condition)
-                saveRDS(tab, file)
+                # saveRDS(tab, file)
                 tab
             }
         )

@@ -77,6 +77,12 @@ dfs <- parallel::mclapply(
         outs_norm <- do.call(rbind, lapply(outfiles_norm, readRDS))
         outs_pso <- do.call(rbind, lapply(outfiles_pso, readRDS))
         out <- rbind(outs_norm, outs_pso)
+        cn <- setdiff(
+            colnames(out),
+            c("n_eff", "Rhat", "null.99", "gene", "time", "snp", "condition")
+        )
+        out[, cn] <- out[, cn] / log(2)
+
         inp_norm <- readRDS(infile_norm)
         inp_pso <- readRDS(infile_pso)
         if (!length(out)) {
@@ -127,7 +133,7 @@ sdata <- data.frame(
 ll <- lapply(seq_along(summary_files),
     function(i) {
         x <- read.table(summary_files[[i]], header = TRUE)
-        x$tissue <- sdata[i, ]
+        x$condition <- sdata[i, ]
         x
     }
 )
@@ -149,7 +155,9 @@ approx_res_df <- approx_res_df[im, ]
 stopifnot(all(sample_res_df$test == approx_res_df$test))
 
 r <- range(c(sample_res_df$log2_aFC_mean, approx_res_df$mean))
-mdf <- merge(approx_res_df, sample_res_df, by = "test", suffix = c(".VB", ".HMC"))
+
+
+mdf <- merge(approx_res_df, sample_res_df, by = c("test", "condition"), suffix = c(".VB", ".HMC"))
 mdf$null.99.VB <- ifelse(mdf$null.99.VB, "no", "yes")
 mdf$null.95.VB <- ifelse(mdf$null.95.VB, "no", "yes")
 mdf$null.50.VB <- ifelse(mdf$null.50.VB, "no", "yes")
@@ -203,7 +211,6 @@ g <- ggplot(mdf2) +
     lims(x = r, y = r) +
     labs(x = "Old estimate", y = "New estimate")
 ggsave("fig/noGT/estimates/se2.png", width = 7, height = 7)
-stop()
 
 for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_count", "sd_count", "n_wt", "n_het", "n_hom")) {
     scale <- if (x == "gene") scale_colour_discrete(guide="none") else scale_colour_viridis()
@@ -227,8 +234,6 @@ for (x in c("gene", "time", "allele_freq", "mean_ase", "sd_ase", "n_ase", "mean_
 
     ggsave(sprintf("fig/noGT/diag/disc_%s_%s.png", x, mtol), width = 7, height = 7)
 }
-
-# stop()
 
 
 tmp <- mdf %>%

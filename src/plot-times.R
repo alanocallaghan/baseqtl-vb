@@ -13,7 +13,7 @@ theme_set(theme_bw())
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--model",
-    default = "GT",
+    default = "noGT",
     type = "character"
 )
 parser$add_argument(
@@ -76,23 +76,6 @@ dfs <- lapply(methods,
     }
 )
 
-names(dfs) <- methods
-by <- if (model == "GT") {
-    c("test", "gene", "snp")
-} else {
-    c("test", "gene", "snp", "condition")
-}
-# mdf <- merge(dfs[[1]], dfs[[2]], by = by, suffix = c(".vb", ".map"))
-# mdf <- merge(mdf, dfs[[3]], by = by, suffix = c("", ".hmc"))
-mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
-
-mdf <- mdf %>%
-    mutate(disc_vb = mean.vb - mean.hmc
-    # , disc_map = mean.map - mean
-)
-
-# mtol <- sprintf("vb_%1.0e", tol)
-mtol <- sprintf("vb")
 if (model == "GT") {
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
     outfiles <- list.files(
@@ -178,11 +161,29 @@ if (model == "GT") {
     )
     covar_df <- do.call(rbind, covar_dfs)
 }
-mdf <- merge(covar_df, mdf)
 
-mdf <- mdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+names(dfs) <- methods
+by <- if (model == "GT") {
+    c("test", "gene", "snp")
+} else {
+    c("test", "gene", "snp", "condition")
+}
+# mdf <- merge(dfs[[1]], dfs[[2]], by = by, suffix = c(".vb", ".map"))
+# mdf <- merge(mdf, dfs[[3]], by = by, suffix = c("", ".hmc"))
+mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
-x <- mdf %>%
+mdf <- mdf %>%
+    mutate(disc_vb = mean.vb - mean.hmc
+    # , disc_map = mean.map - mean
+)
+
+# mtol <- sprintf("vb_%1.0e", tol)
+mtol <- sprintf("vb")
+
+cmdf <- merge(covar_df, mdf)
+cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+
+x <- cmdf %>%
     arrange(-abs(disc_vb)) %>%
     top_n(50, disc_vb) %>%
     select(vb = mean.vb, hmc = mean.hmc, discrepancy = disc_vb, snp, gene)
@@ -191,7 +192,7 @@ saveRDS(x, sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol))
 
 mname <- "ADVI"
 method <- "vb"
-r <- range(c(mdf$mean.hmc, mdf$mean.vb))
+r <- range(c(cmdf$mean.hmc, cmdf$mean.vb))
 ## not se mean but other hmc se
 diag_vars <- c(
     "gene",
@@ -202,7 +203,7 @@ diag_vars <- c(
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
 for (x in diag_vars) {    
-    g <- ggplot(mdf) +
+    g <- ggplot(cmdf) +
         aes_string(x, "abs(discrepancy)") +
         geom_point(size = 0.8) +
         geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")
@@ -212,13 +213,13 @@ for (x in diag_vars) {
     ggsave(sprintf("%s/%s/diag/disc_%s_%s.png", fpath, model, x, method), width = 7, height = 7)
 }
 
-g <- ggplot(mdf) +
+g <- ggplot(cmdf) +
     aes(time.hmc, disc_vb) +
     geom_point() +
     labs(x = "Time taken for HMC (s)", y = "Discrepancy (ADVI - HMC)")
 ggsave(sprintf("%s/%s/diag/time_vb.png", fpath, model), width = 7, height = 7)
 
-mdf %>%
+cmdf %>%
     group_by(gene) %>%
     summarise(time = sum(time.hmc), nsnps = n()) %>%
     ggplot() +
@@ -228,20 +229,20 @@ mdf %>%
 ggsave(sprintf("%s/%s/time/nsnp.png", fpath, model), width = 7, height = 7)
 
 
-mdf <- mdf[mdf$n_eff.hmc > minEff & mdf$Rhat < maxRhat, ]
+cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 ## from PSIS paper, arxiv 1507.02646
-# mdf <- mdf[mdf$khat < 0.7, ]
+# cmdf <- cmdf[cmdf$khat < 0.7, ]
 
-gdf <- group_by(mdf, gene)
+gdf <- group_by(cmdf, gene)
 
 lab_str <- "HMC: %s\nVB: %s\n"
-mdf$nullstr95 <- sprintf(lab_str,
-    ifelse(mdf$null.95.hmc, "no", "yes"),
-    ifelse(mdf$null.95.vb, "no", "yes")
+cmdf$nullstr95 <- sprintf(lab_str,
+    ifelse(cmdf$null.95.hmc, "no", "yes"),
+    ifelse(cmdf$null.95.vb, "no", "yes")
 )
-mdf$nullstr99 <- sprintf(lab_str,
-    ifelse(mdf$null.99.hmc, "no", "yes"),
-    ifelse(mdf$null.99.vb, "no", "yes")
+cmdf$nullstr99 <- sprintf(lab_str,
+    ifelse(cmdf$null.99.hmc, "no", "yes"),
+    ifelse(cmdf$null.99.vb, "no", "yes")
 )
 
 null_levs <- sprintf(
@@ -251,10 +252,12 @@ null_levs <- sprintf(
 )
 null_ord <- null_levs[c(1, 3, 2, 4)]
 scale <- scale_colour_brewer(palette = "Paired", limits = null_levs, name = NULL)
-mdf$nullstr95 <- factor(mdf$nullstr95, levels = null_ord)
-mdf$nullstr99 <- factor(mdf$nullstr99, levels = null_ord)
+cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
+cmdf$nullstr99 <- factor(cmdf$nullstr99, levels = null_ord)
 
-mdfs <- mdf[mdf$mean.vb < 3, ]
+stop()
+mdfs <- cmdf
+# mdfs <- cmdf[cmdf$mean.vb < 3, ]
 lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
 
 g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
@@ -285,8 +288,8 @@ for (t in c(99, 95)) {
         function(x) {
             column <- sprintf("null.%s.vb", x)
             sens_vec(
-                truth = factor(mdf[[bc]], levels = c(TRUE, FALSE)),
-                estimate = factor(mdf[[column]], levels = c(TRUE, FALSE))
+                truth = factor(cmdf[[bc]], levels = c(TRUE, FALSE)),
+                estimate = factor(cmdf[[column]], levels = c(TRUE, FALSE))
             )
         }
     )
@@ -295,8 +298,8 @@ for (t in c(99, 95)) {
         function(x) {
             column <- sprintf("null.%s.vb", x)
             spec_vec(
-                truth = factor(mdf[[bc]], levels = c(TRUE, FALSE)),
-                estimate = factor(mdf[[column]], levels = c(TRUE, FALSE))
+                truth = factor(cmdf[[bc]], levels = c(TRUE, FALSE)),
+                estimate = factor(cmdf[[column]], levels = c(TRUE, FALSE))
             )
         }
     )
@@ -304,7 +307,7 @@ for (t in c(99, 95)) {
         levs,
         function(x) {
             column <- sprintf("null.%s.vb", x)
-            sum(mdf$time.hmc[mdf[[column]]]) + sum(mdf$time.vb)
+            sum(cmdf$time.hmc[cmdf[[column]]]) + sum(cmdf$time.vb)
         }
     )
 
@@ -312,13 +315,13 @@ for (t in c(99, 95)) {
         aes(sens_vb, time_vb) +
         geom_line() +
         geom_texthline(
-            yintercept = sum(mdf$time.hmc),
+            yintercept = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
             linetype = "dashed"
         ) +
         labs(x = "Sensitivity", y = "Total time (s)") +
-        ylim(0, max(sum(mdf$time.hmc), time_vb)) +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
     ggsave(sprintf("%s/%s/time/time_vs_sens_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
@@ -326,13 +329,13 @@ for (t in c(99, 95)) {
         aes(spec_vb, time_vb) +
         geom_line() +
         geom_texthline(
-            yintercept = sum(mdf$time.hmc),
+            yintercept = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
             linetype = "dashed"
         ) +
         labs(x = "Specificity", y = "Total time (s)") +
-        ylim(0, max(sum(mdf$time.hmc), time_vb)) +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
     ggsave(sprintf("%s/%s/time/time_vs_spec_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
@@ -348,7 +351,7 @@ for (t in c(99, 95)) {
 
 
 
-gdf <- group_by(mdf, gene)
+gdf <- group_by(cmdf, gene)
 
 ## by snp
 for (t in c(99, 95)) {
@@ -390,7 +393,7 @@ for (t in c(99, 95)) {
             column <- sprintf("null.%s.vb", x)
             gd <- gdf %>%
                 summarise(e = any(.data[[column]]))
-            sum(mdf$time.hmc[mdf$gene %in% gd$gene[gd$e]]) + sum(mdf$time.vb)
+            sum(cmdf$time.hmc[cmdf$gene %in% gd$gene[gd$e]]) + sum(cmdf$time.vb)
         }
     )
 
@@ -398,13 +401,13 @@ for (t in c(99, 95)) {
         aes(sens_vb, time_vb) +
         geom_line() +
         geom_texthline(
-            yintercept = sum(mdf$time.hmc),
+            yintercept = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
             linetype = "dashed"
         ) +
         labs(x = "Sensitivity", y = "Total time (s)") +
-        ylim(0, max(sum(mdf$time.hmc), time_vb)) +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
     ggsave(sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
@@ -412,13 +415,13 @@ for (t in c(99, 95)) {
         aes(spec_vb, time_vb) +
         geom_line() +
         geom_texthline(
-            yintercept = sum(mdf$time.hmc),
+            yintercept = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
             linetype = "dashed"
         ) +
         labs(x = "Specificity", y = "Total time (s)") +
-        ylim(0, max(sum(mdf$time.hmc), time_vb)) +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
     ggsave(sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.png", fpath, model, t), width = 5, height = 5)
 
@@ -432,7 +435,7 @@ for (t in c(99, 95)) {
     ggsave(sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t), width = 5, height = 5)
 }
 
-g <- ggplot(mdf) +
+g <- ggplot(cmdf) +
     aes(time.hmc, time.vb) +
     geom_pointdensity() +
     scale_x_log10() +

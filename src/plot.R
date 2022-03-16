@@ -19,7 +19,7 @@ parser$add_argument(
     type = "double"
 )
 parser$add_argument(
-    "-n", "--nogt",
+    "-g", "--gt",
     action = "store_true",
     default = TRUE
 )
@@ -28,7 +28,7 @@ parser$add_argument(
 args <- parser$parse_args()
 method <- args[["method"]]
 tol <- args[["tolerance"]]
-model <- if (args[["nogt"]]) "noGT" else "GT"
+model <- if (args[["gt"]]) "GT" else "noGT"
 
 mname <- switch(method,
     "vb" = "ADVI",
@@ -215,6 +215,10 @@ sample_res_df$gene <- sample_res_df$Gene_id
 sample_res_df$snp <- sample_res_df$tag
 sample_res_df$Gene_id <- NULL
 sample_res_df$tag <- NULL
+
+stop()
+saveRDS(sample_res_df, "ss.rds")
+saveRDS(approx_res_df, "as.rds")
 
 approx_res_df$null.95 <- sign(approx_res_df$"2.5%") == sign(approx_res_df$"97.5%")
 approx_res_df$null.50 <- sign(approx_res_df$"25.0%") == sign(approx_res_df$"75.0%")

@@ -25,7 +25,7 @@ rule plots:
         [
             expand(
                 "rds/GT/{method}/{gene}_{snp}.rds",
-                method = ["sampling"],
+                method = ["vb", "sampling"],
                 gene = gene,
                 snp = gt_dict[gene]
             ) for gene in gt_dict.keys()
@@ -33,7 +33,7 @@ rule plots:
         [
             expand(
                 "rds/noGT/{method}/{gene}_{snp}_{condition}_skin.rds",
-                method = ["sampling"],
+                method = ["vb", "sampling"],
                 gene = gene,
                 condition = ["Psoriasis", "normal"],
                 snp = nogt_dict[gene]

@@ -4,14 +4,14 @@ library("rstan")
 
 parser <- ArgumentParser()
 parser$add_argument(
-    "-m", "--method",
+    "-m", "--model",
     default = "vb",
     type = "character"
 )
 parser$add_argument(
-    "-n", "--nogt",
-    action = "store_true",
-    default = FALSE
+    "-i", "--inference",
+    default = "sampling",
+    type = "character"
 )
 parser$add_argument(
     "-g", "--gene",
@@ -47,7 +47,7 @@ sampling <- function(...) {
     rstan::sampling(..., chains = 4, open_progress = FALSE)
 }
 
-method <- args[["method"]]
+method <- args[["inference"]]
 fun <- match.fun(method)
 
 # probs <- c(0.005, 0.025, 0.25, 0.50, 0.75, 0.975, 0.995)
@@ -55,7 +55,7 @@ probs <- seq(0.005, 0.995, by = 0.005)
 
 # mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
 mtol <- method
-if (!args[["nogt"]]) {
+if (args[["model"]] == "GT") {
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
 
     files <- list.files(dir)

@@ -5,7 +5,7 @@ library("dplyr")
 parser <- ArgumentParser()
 parser$add_argument(
     "-i", "--inference",
-    default = "sampling",
+    default = "vb",
     type = "character"
 )
 parser$add_argument(
@@ -15,7 +15,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 
@@ -24,12 +24,16 @@ method <- args[["inference"]]
 tol <- args[["tolerance"]]
 model <- args[["model"]]
 
+mname <- switch(method,
+    "vb" = "ADVI",
+    "optimizing" = "MAP",
+    "sampling" = "HMC"
+)
+
 mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
 # mtol <- method
 
-sfile <- sprintf("rds/%s/sfile.rds", model)
-combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
-
+combfile <- sprintf("rds/%s/components/%s_combined.rds", model, mtol)
 
 if (model == "GT") {
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
@@ -40,31 +44,40 @@ if (model == "GT") {
     genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
-    
-    outfiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG*", full.names = TRUE)
+
+    outfiles <- list.files(
+        sprintf("rds/GT/components/%s", mtol),
+        pattern = "ENSG*",
+        full.names = TRUE
+    )
     genes <- unique(gsub(".*(ENSG\\d+).*", "\\1", outfiles))
     infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
-    donefiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG.*_done", full.names = TRUE)
 
- 
     dfs <- parallel::mclapply(
+    # dfs <- lapply(
         1:length(genes),
         function(i) {
             cat(i, "/", length(genes), "\n")
             gene <- genes[[i]]
             infile <- infiles[[i]]
             outfiles <- list.files(
-                sprintf("rds/GT/%s/", mtol),
+                sprintf("rds/GT/components/%s/", mtol),
                 pattern = paste0(gene, ".*"),
                 full.names = TRUE
             )
-            outfiles <- setdiff(outfiles, donefiles)
             # outfile <- outfiles[[i]]
             outs <- lapply(outfiles, readRDS)
+            ind_cols <- sapply(outs,
+                function(x) {
+                    ncol(x) == 208
+                }
+            )
+            outs[ind_cols] <- NULL
+            unlink(outfiles[ind_cols])
             out <- do.call(rbind, outs)
             cn <- setdiff(
                 colnames(out),
-                c("n_eff", "Rhat", "niter", "converged", "null.99", "gene", "time", "snp")
+                c("n_eff", "Rhat", "niter", "converged", "null.99", "gene", "time", "snp", "component")
             )
             out[, cn] <- out[, cn] / log(2)
             if (method == "vb") {
@@ -99,20 +112,12 @@ if (model == "GT") {
 
     approx_res_df <- do.call(rbind, dfs)
     approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$snp , sep = "_")
-    # sample_res_df <- do.call(
-    #     rbind,
-    #     lapply(
-    #         genes,
-    #         function(gene) {
-    #             read.table(sprintf("%s/rbias.%s.stan.summary.txt", dir, gene), header=TRUE)
-    #         }
-    #     )
-    # )
+
 } else {
     
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/psoriasis/refbias/Btrecase/SpikePrior/fisher001/rna/"
 
-    outfiles <- list.files(sprintf("rds/noGT/%s/", mtol), pattern = "ENSG*", full.names=TRUE)
+    outfiles <- list.files(sprintf("rds/noGT/components/%s/", mtol), pattern = "ENSG*", full.names=TRUE)
     genes <- unique(gsub(".*(ENSG\\d+)..*", "\\1", outfiles))
 
     infiles <- list(
@@ -134,7 +139,6 @@ if (model == "GT") {
             n_hom = sum(abs(inp1$gase) == 2)
         )
     }
-    stop()
     dfs <- parallel::mclapply(
         1:length(genes),
         function(i) {
@@ -142,14 +146,19 @@ if (model == "GT") {
             infile_norm <- infiles[[1]][[i]]
             infile_pso <- infiles[[2]][[i]]
             
-            outfiles <- list.files(
-                sprintf("rds/noGT/%s/", mtol),
-                pattern = sprintf("%s_.*.rds", genes[[i]]),
+            outfiles_norm <- list.files(
+                sprintf("rds/noGT/components/%s/", mtol),
+                pattern = sprintf("%s_.*_normal_skin.rds", genes[[i]]),
                 full.names = TRUE
             )
-            outs <- lapply(outfiles, readRDS)
-            out <- do.call(rbind, outs)
-
+            outfiles_pso <- list.files(
+                sprintf("rds/noGT/components/%s/", mtol),
+                pattern = sprintf("%s_.*_Psoriasis_skin.rds", genes[[i]]),
+                full.names = TRUE
+            )
+            outs_norm <- do.call(rbind, lapply(outfiles_norm, readRDS))
+            outs_pso <- do.call(rbind, lapply(outfiles_pso, readRDS))
+            out <- rbind(outs_norm, outs_pso)
             cn <- setdiff(
                 colnames(out),
                 c("n_eff", "Rhat", "null.99", "gene", "time", "snp", "condition")
@@ -178,24 +187,7 @@ if (model == "GT") {
 
     approx_res_df <- do.call(rbind, dfs)
     approx_res_df$test <- paste(approx_res_df$gene, approx_res_df$snp , sep = "_")
-
-    # summary_files <- list.files(dir, pattern = "stan.summary", full.names = TRUE)
-    # sdata <- data.frame(
-    #     tissue = gsub(".*(Psoriasis_skin|normal_skin).*", "\\1", summary_files)
-    # )
-    # ll <- lapply(seq_along(summary_files),
-    #     function(i) {
-    #         x <- read.table(summary_files[[i]], header = TRUE)
-    #         x$condition <- sdata[i, ]
-    #         x
-    #     }
-    # )
-    # cn <- Reduce(intersect, lapply(ll, colnames))
-    # ll <- lapply(ll, function(x) x[, cn])
-    # sample_res_df <- do.call(rbind, ll)
-
 }
 
-cat("nrow:", nrow(approx_res_df), "\n")
 saveRDS(approx_res_df, combfile)
-# saveRDS(sample_res_df, sfile)
+

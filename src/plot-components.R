@@ -6,7 +6,6 @@ library("viridis")
 library("yardstick")
 library("geomtextpath")
 library("dplyr")
-library("ggrepel")
 library("argparse")
 
 theme_set(theme_bw())
@@ -42,7 +41,7 @@ dfs <- lapply(methods,
     function(method) {
         cat(method, "\n")
         mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
-        combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
+        combfile <- sprintf("rds/%s/components/%s_combined.rds", model, mtol)
         if (file.exists(combfile)) {
             return(readRDS(combfile))
         }
@@ -70,7 +69,7 @@ dfs[] <- lapply(dfs,
 names(dfs) <- methods
 by <- if (model == "GT") {
     c(
-        "test", "gene", "snp", "n_tot", "n_ase",
+        "test", "gene", "snp", "n_tot", "n_ase", "component",
         "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
     )
 } else {
@@ -81,6 +80,80 @@ by <- if (model == "GT") {
     )
 }
 mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+mdf <- mdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+
+
+
+
+dv <- dfs$vb[, c("mean", "component", "snp", "gene")]
+dv <- dv[order(dv$component, dv$mean), ]
+dv$test <- paste(dv$gene, dv$snp, sep="_")
+levs <- dv[dv$component == "both", "test"]
+dv$testn <- factor(dv$test, levels = levs)
+
+g <- ggplot(dv) +
+    aes(testn, mean, colour = component) +
+    geom_point(alpha = 0.5) +
+    scale_colour_brewer(palette = "Set2") +
+    labs(x = "Association") +
+    theme(
+        panel.grid = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+    )
+ggsave(
+    sprintf("%s/%s/estimates/component-estimates-colour.png", fpath, model),
+    width = 7, height = 7
+)
+
+ds <- dfs$sampling[, c("mean", "component", "snp", "gene")]
+ds <- ds[order(ds$component, ds$mean), ]
+ds$test <- paste(ds$gene, ds$snp, sep="_")
+levs <- ds[ds$component == "both", "test"]
+ds$testn <- factor(ds$test, levels = levs)
+
+g <- ggplot(ds) +
+    aes(testn, mean, colour = component) +
+    geom_point(alpha = 0.5) +
+    scale_colour_brewer(palette = "Set2") +
+    labs(x = "Association") +
+    theme(
+        panel.grid = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+    )
+ggsave(
+    sprintf("%s/%s/estimates/component-estimates-colour.png", fpath, model),
+    width = 7, height = 7
+)
+
+mdf$label <- gsub("inter", "NB", mdf$component)
+mdf$label <- gsub("intra", "BB", mdf$label)
+
+lims <- range(c(mdf$mean.hmc, mdf$mean.vb))
+
+g <- ggplot(mdf) +
+    aes(mean.hmc, mean.vb) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    geom_point(alpha = 0.5, size = 0.7) +
+    facet_wrap(~label) +
+    lims(x = lims, y = lims) +
+    labs(x = "HMC estimate", y = "VB estimate")
+ggsave(
+    sprintf("%s/%s/estimates/component-estimates-facet.png", fpath, model),
+    width = 10, height = 6
+)
+
+g <- ggplot(mdf) +
+    aes(mean.hmc, discrepancy) +
+    geom_point(alpha = 0.5, size = 0.7) +
+    facet_wrap(~label) +
+    labs(x = "HMC estimate", y = "Discrepancy")
+ggsave(
+    sprintf("%s/%s/diag/discrepancy-components.png", fpath, model),
+    width = 10, height = 6
+)
+
 
 cmdf <- mdf
 cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
@@ -101,7 +174,7 @@ x <- cmdf %>%
     )
 
 saveRDS(x,
-    sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
+    sprintf("rds/%s_component_discrepancies_vb_%1.0e.rds", model, tol)
 )
 
 cmdf <- cmdf %>%
@@ -127,50 +200,31 @@ diag_vars <- c(
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
 cmdf$converged <- factor(cmdf$converged)
+
 for (type in c("discrepancy")) {
 # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {    
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(size = 0.8) 
+            geom_point(size = 0.8, alpha = 0.75) 
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
         g <- ggplot(cmdf) +
-            aes_string(x, sprintf("abs(%s)", type)) +
+            aes_string(x, sprintf("abs(%s)", type), colour = "component") +
             geom +
             geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
             # scale_y_log10() +
             labs(x = x, y = "Discrepancy")
 
         ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, x, method),
+            sprintf("%s/%s/diag/comp_%s_%s_%s.png", fpath, model, type, x, method),
             width = 7, height = 7
         )
     }
 }
 
-g <- ggplot(cmdf) +
-    aes(time.hmc, discrepancy) +
-    geom_point() +
-    labs(x = "Time taken for HMC (s)", y = "Discrepancy (ADVI - HMC)")
-ggsave(
-    sprintf("%s/%s/diag/time_vb.png", fpath, model),
-    width = 7, height = 7
-)
+stop()
 
-cmdf %>%
-    group_by(gene) %>%
-    summarise(time = sum(time.hmc), nsnps = n()) %>%
-    ggplot() +
-    aes(nsnps, time) +
-    geom_point() +
-    geom_smooth(method = "lm", formula = y ~ x) +
-    scale_x_log10() +
-    scale_y_log10() -> g
-ggsave(
-    sprintf("%s/%s/time/nsnp.png", fpath, model),
-    width = 7, height = 7
-)
 
 
 cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
@@ -270,10 +324,6 @@ for (t in c(99, 95)) {
             vjust = -0.2,
             linetype = "dashed"
         ) +
-        geom_text_repel(
-            aes(label = levs), vjust = 1, hjust = 1,
-            segment.color = "grey70"
-        ) +
         labs(x = "Sensitivity", y = "Total time (s)") +
         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Sensitivity vs total time for ADVI")
@@ -291,10 +341,6 @@ for (t in c(99, 95)) {
             vjust = -0.2,
             linetype = "dashed"
         ) +
-        geom_text_repel(
-            aes(label = levs), vjust = 1, hjust = 1,
-            segment.color = "grey70"
-        ) +
         labs(x = "Specificity", y = "Total time (s)") +
         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
         ggtitle("Specificity vs total time for ADVI")
@@ -303,7 +349,6 @@ for (t in c(99, 95)) {
         width = 5, height = 5
     )
 
-    stop()
     g <- ggplot() +
         aes(1 - spec_vb, sens_vb) +
         geom_line() +
@@ -317,6 +362,100 @@ for (t in c(99, 95)) {
     )
 }
 
+
+
+gdf <- group_by(cmdf, gene)
+
+## by snp
+for (t in c(99, 95)) {
+    bc <- paste0("null.", t, ".hmc")
+    levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
+    sens_vb <- sapply(
+        levs,
+        function(x) {
+            column <- sprintf("null.%s.vb", x)
+            gdf %>%
+                summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
+                sens(
+                    ## TRUE means that the HPD interval is one side of zero (sig)
+                    ## FALSE means it overlaps zero (null)
+                    truth = factor(t, levels = c(TRUE, FALSE)),
+                    estimate = factor(e, levels = c(TRUE, FALSE))
+                ) %>%
+                pull(.estimate)
+        }
+    )
+    spec_vb <- sapply(
+        levs,
+        function(x) {
+            column <- sprintf("null.%s.vb", x)
+            gdf %>%
+                summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
+                spec(
+                    ## TRUE means that the HPD interval is one side of zero (sig)
+                    ## FALSE means it overlaps zero (null)
+                    truth = factor(t, levels = c(TRUE, FALSE)),
+                    estimate = factor(e, levels = c(TRUE, FALSE))
+                ) %>%
+                pull(.estimate)
+        }
+    )
+    time_vb <- sapply(
+        levs,
+        function(x) {
+            column <- sprintf("null.%s.vb", x)
+            gd <- gdf %>%
+                summarise(e = any(.data[[column]]))
+            sum(cmdf$time.hmc[cmdf$gene %in% gd$gene[gd$e]]) + sum(cmdf$time.vb)
+        }
+    )
+
+    g <- ggplot() +
+        aes(sens_vb, time_vb) +
+        geom_line() +
+        geom_texthline(
+            yintercept = sum(cmdf$time.hmc),
+            label = "Total time without screening", 
+            vjust = -0.2,
+            linetype = "dashed"
+        ) +
+        labs(x = "Sensitivity", y = "Total time (s)") +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
+        ggtitle("Sensitivity vs total time for ADVI")
+    ggsave(
+        sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.png", fpath, model, t),
+        width = 5, height = 5
+    )
+
+    g <- ggplot() +
+        aes(spec_vb, time_vb) +
+        geom_line() +
+        geom_texthline(
+            yintercept = sum(cmdf$time.hmc),
+            label = "Total time without screening", 
+            vjust = -0.2,
+            linetype = "dashed"
+        ) +
+        labs(x = "Specificity", y = "Total time (s)") +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
+        ggtitle("Specificity vs total time for ADVI")
+    ggsave(
+        sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.png", fpath, model, t),
+        width = 5, height = 5
+    )
+
+    g <- ggplot() +
+        aes(1 - spec_vb, sens_vb) +
+        geom_line() +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        labs(x = "1 - specificity", y = "Sensitivity") +
+        ggtitle("VB") +
+        lims(x = 0:1, y = 0:1)
+    ggsave(
+        sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t),
+        width = 5, height = 5
+    )
+}
 
 g <- ggplot(cmdf) +
     aes(time.hmc, time.vb) +
@@ -370,108 +509,3 @@ ggsave(
     sprintf("%s/%s/time/time_comparison.png", fpath, model),
     width = 5, height = 5
 )
-
-
-
-
-
-
-# gdf <- group_by(cmdf, gene)
-
-# ## by snp
-# for (t in c(99, 95)) {
-#     bc <- paste0("null.", t, ".hmc")
-#     levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
-#     sens_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gdf %>%
-#                 summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
-#                 sens(
-#                     ## TRUE means that the HPD interval is one side of zero (sig)
-#                     ## FALSE means it overlaps zero (null)
-#                     truth = factor(t, levels = c(TRUE, FALSE)),
-#                     estimate = factor(e, levels = c(TRUE, FALSE))
-#                 ) %>%
-#                 pull(.estimate)
-#         }
-#     )
-#     spec_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gdf %>%
-#                 summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
-#                 spec(
-#                     ## TRUE means that the HPD interval is one side of zero (sig)
-#                     ## FALSE means it overlaps zero (null)
-#                     truth = factor(t, levels = c(TRUE, FALSE)),
-#                     estimate = factor(e, levels = c(TRUE, FALSE))
-#                 ) %>%
-#                 pull(.estimate)
-#         }
-#     )
-#     time_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gd <- gdf %>%
-#                 summarise(e = any(.data[[column]]))
-#             sum(cmdf$time.hmc[cmdf$gene %in% gd$gene[gd$e]]) + sum(cmdf$time.vb)
-#         }
-#     )
-#     g <- ggplot() +
-#         aes(sens_vb, time_vb) +
-#         geom_line() +
-#         geom_texthline(
-#             yintercept = sum(cmdf$time.hmc),
-#             label = "Total time without screening", 
-#             vjust = -0.2,
-#             linetype = "dashed"
-#         ) +
-#         geom_text_repel(
-#             aes(label = levs), vjust = 1, hjust = 1,
-#             segment.color = "grey70"
-#         ) +
-#         labs(x = "Sensitivity", y = "Total time (s)") +
-#         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-#         ggtitle("Sensitivity vs total time for ADVI")
-#     ggsave(
-#         sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.png", fpath, model, t),
-#         width = 5, height = 5
-#     )
-
-#     g <- ggplot() +
-#         aes(spec_vb, time_vb) +
-#         geom_line() +
-#         geom_texthline(
-#             yintercept = sum(cmdf$time.hmc),
-#             label = "Total time without screening", 
-#             vjust = -0.2,
-#             linetype = "dashed"
-#         ) +
-#         geom_text_repel(
-#             aes(label = levs), vjust = 1, hjust = 1,
-#             segment.color = "grey70"
-#         ) +
-#         labs(x = "Specificity", y = "Total time (s)") +
-#         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-#         ggtitle("Specificity vs total time for ADVI")
-#     ggsave(
-#         sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.png", fpath, model, t),
-#         width = 5, height = 5
-#     )
-
-#     g <- ggplot() +
-#         aes(1 - spec_vb, sens_vb) +
-#         geom_line() +
-#         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-#         labs(x = "1 - specificity", y = "Sensitivity") +
-#         ggtitle("VB") +
-#         lims(x = 0:1, y = 0:1)
-#     ggsave(
-#         sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t),
-#         width = 5, height = 5
-#     )
-# }

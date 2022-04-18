@@ -1,4 +1,5 @@
-## make dict/named list of gene:snp
+dir.create("dicts/GT", recursive = TRUE, showWarnings = FALSE)
+dir.create("dicts/noGT", recursive = TRUE, showWarnings = FALSE)
 
 dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
 files <- list.files(dir, full.names = TRUE)
@@ -8,8 +9,11 @@ genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
 snp_list <- lapply(stan_files, function(x) names(readRDS(x)))
 names(snp_list) <- genes
+lapply(genes, function(gene) {
+    write(rjson::toJSON(snp_list[[gene]]), sprintf("dicts/GT/%s.json", gene))
+})
 
-write(rjson::toJSON(snp_list), "GT_dict.json")
+# write(rjson::toJSON(snp_list), "GT_dict.json")
 
 
 
@@ -30,4 +34,9 @@ snp_list <- lapply(genes, function(gene) {
     intersect(nsnps, psnps)
 })
 names(snp_list) <- genes
-write(rjson::toJSON(snp_list), "noGT_dict.json")
+
+lapply(genes, function(gene) {
+    write(rjson::toJSON(snp_list[[gene]]), sprintf("dicts/noGT/%s.json", gene))
+})
+
+# write(rjson::toJSON(snp_list), "noGT_dict.json")

@@ -54,6 +54,7 @@ dfs <- lapply(methods,
     }
 )
 
+
 dfs[] <- lapply(dfs,
     function(df) {
         ## TRUE means that the HPD interval is one side of zero (sig)
@@ -146,11 +147,39 @@ for (type in c("discrepancy")) {
             labs(x = x, y = "Discrepancy")
 
         ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, x, method),
+            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
             width = 7, height = 7
         )
     }
 }
+
+g <- ggplot(cmdf) +
+    aes(n_eff.hmc, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    geom_vline(xintercept = 500, linetype = "dashed") +
+    labs(x = "Effective sample size", y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_ESS_vb.png", fpath, model),
+    width = 5, height = 5
+)
+g <- ggplot(cmdf) +
+    aes(niter, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    labs(x = "Number of iterations before convergence", y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_niter_vb.png", fpath, model),
+    width = 5, height = 5
+)
+
+g <- ggplot(cmdf) +
+    aes(khat, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    geom_vline(xintercept = 0.7, linetype = "dashed") +
+    labs(x = expression(hat(K)), y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_khat_vb.png", fpath, model),
+    width = 5, height = 5
+)
 
 g <- ggplot(cmdf) +
     aes(time.hmc, discrepancy) +
@@ -174,13 +203,14 @@ cmdf %>%
     summarise(time = sum(time.hmc), nsnps = n()) %>%
     ggplot() +
     aes(nsnps, time) +
+    labs(x = "Number of SNPs in cis window", y = "Time (s)") +
     geom_point() +
     geom_smooth(method = "lm", formula = y ~ x) +
     scale_x_log10() +
     scale_y_log10() -> g
 ggsave(
     sprintf("%s/%s/time/nsnp.png", fpath, model),
-    width = 7, height = 7
+    width = 5, height = 5
 )
 
 
@@ -254,14 +284,14 @@ cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 
 gdf <- group_by(cmdf, gene)
 
-lab_str <- "HMC: %s\nVB: %s\n"
+lab_str <- "HMC: %s\nADVI: %s\n"
 cmdf$nullstr95 <- sprintf(lab_str,
-    ifelse(cmdf$null.95.hmc, "no", "yes"),
-    ifelse(cmdf$null.95.vb, "no", "yes")
+    ifelse(cmdf$null.95.hmc, "yes", "no"),
+    ifelse(cmdf$null.95.vb, "yes", "no")
 )
 cmdf$nullstr99 <- sprintf(lab_str,
-    ifelse(cmdf$null.99.hmc, "no", "yes"),
-    ifelse(cmdf$null.99.vb, "no", "yes")
+    ifelse(cmdf$null.99.hmc, "yes", "no"),
+    ifelse(cmdf$null.99.vb, "yes", "no")
 )
 
 null_levs <- sprintf(
@@ -270,9 +300,13 @@ null_levs <- sprintf(
     c("no", "no",  "yes", "yes")
 )
 null_ord <- null_levs[c(1, 3, 2, 4)]
-scale <- scale_colour_brewer(palette = "Paired", limits = null_levs, name = NULL)
+scale <- scale_colour_manual(
+    values = setNames(c("#fb9a99", "#e31a1c", "#a6cee3", "#1f78b4"), null_levs),
+    name = "Significance"
+)
 cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
 cmdf$nullstr99 <- factor(cmdf$nullstr99, levels = null_ord)
+
 
 
 mdfs <- cmdf
@@ -284,8 +318,10 @@ g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
-    labs(x = "MCMC estimate", y = "VB estimate") +
-    scale
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
 ggsave(
     sprintf("%s/%s/estimates/point-estimates-95.png", fpath, model),
     width = 5, height = 5
@@ -296,16 +332,45 @@ g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
-    labs(x = "MCMC estimate", y = "VB estimate") +
-    scale
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
 ggsave(
     sprintf("%s/%s/estimates/point-estimates-99.png", fpath, model),
     width = 5, height = 5
 )
 
+mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 
+g <- ggplot(mdfss) +
+    aes(mean.hmc, mean.vb, colour = nullstr95) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    geom_point(size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-diff-95.png", fpath, model),
+    width = 5, height = 5
+)
+mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
 
-
+g <- ggplot(mdfss) +
+    aes(mean.hmc, mean.vb, colour = nullstr99) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    geom_point(size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
+    width = 5, height = 5
+)
 
 
 
@@ -462,7 +527,6 @@ get_time <- function(
     )
 }
 
-stop()
 ## by snp
 for (t in c(99, 95)) {
     bc <- paste0("null.", t, ".hmc")
@@ -533,12 +597,13 @@ for (t in c(99, 95)) {
         thresholds_vb,
         comparison = `>`
     )
-
+    # if (t == 99) stop()
+    min(time_vb[sens_vb == 1] / sum(df$time.hmc))
 
     g <- ggplot() +
         geom_path(aes(sens_lm, time_lm, colour = "lm")) +
         geom_path(aes(sens_glm, time_glm, colour = "glm")) +
-        geom_path(aes(sens_vb, time_vb, colour = "VB")) +
+        geom_path(aes(sens_vb, time_vb, colour = "ADVI")) +
         geom_texthline(
             yintercept = sum(df$time.hmc),
             label = "Total time without screening", 
@@ -562,7 +627,7 @@ for (t in c(99, 95)) {
     g <- ggplot() +
         geom_path(aes(spec_lm, time_lm, colour = "lm")) +
         geom_path(aes(spec_glm, time_glm, colour = "glm")) +
-        geom_path(aes(spec_vb, time_vb, colour = "VB")) +
+        geom_path(aes(spec_vb, time_vb, colour = "ADVI")) +
         geom_texthline(
             yintercept = sum(df$time.hmc),
             label = "Total time without screening", 
@@ -615,19 +680,19 @@ for (t in c(99, 95)) {
         geom_path(
             aes(
                 perf_pr_lm@x.values[[1]], perf_pr_lm@y.values[[1]],
-                colour = sprintf("lm; AUPR: %0.3f", perf_aupr_lm)
+                colour = sprintf("lm; AUPRC: %0.3f", perf_aupr_lm)
             )
         ) +
         geom_path(
             aes(
                 perf_pr_glm@x.values[[1]], perf_pr_glm@y.values[[1]],
-                colour = sprintf("glm; AUPR: %0.3f", perf_aupr_glm)
+                colour = sprintf("glm; AUPRC: %0.3f", perf_aupr_glm)
             )
         ) +
         geom_path(
             aes(
                 perf_pr_vb@x.values[[1]], perf_pr_vb@y.values[[1]],
-                colour = sprintf("VB; AUPR: %0.3f", perf_aupr_vb)
+                colour = sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb)
             )
         ) +
         lims(x = 0:1, y = 0:1) +
@@ -643,19 +708,19 @@ for (t in c(99, 95)) {
         geom_path(
             aes(
                 perf_roc_lm@x.values[[1]], perf_roc_lm@y.values[[1]],
-                colour = sprintf("lm; AUPR: %0.3f", perf_auroc_lm)
+                colour = sprintf("lm; AUROC: %0.3f", perf_auroc_lm)
             )
         ) +
         geom_path(
             aes(
                 perf_roc_glm@x.values[[1]], perf_roc_glm@y.values[[1]],
-                colour = sprintf("glm; AUPR: %0.3f", perf_auroc_glm)
+                colour = sprintf("glm; AUROC: %0.3f", perf_auroc_glm)
             )
         ) +
         geom_path(
             aes(
                 perf_roc_vb@x.values[[1]], perf_roc_vb@y.values[[1]],
-                colour = sprintf("VB; AUPR: %0.3f", perf_auroc_vb)
+                colour = sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb)
             )
         ) +
         lims(x = 0:1, y = 0:1) +

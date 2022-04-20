@@ -1,3 +1,4 @@
+library("argparse")
 library("ggplot2")
 library("ggdist")
 library("ggpointdensity")
@@ -7,19 +8,19 @@ library("yardstick")
 library("geomtextpath")
 library("dplyr")
 library("ggrepel")
-library("argparse")
+library("ROCR")
 
 theme_set(theme_bw())
 
 parser <- ArgumentParser()
 parser$add_argument( 
     "-m", "--model",
-    default = "GT",
+    default = "noGT",
     type = "character"
 )
 parser$add_argument(
     "-t", "--tolerance",
-    default = 1e-3,
+    default = 1e-2,
     type = "double"
 )
 
@@ -84,6 +85,7 @@ mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
 cmdf <- mdf
 cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+cmdf <- cmdf[cmdf$discrepancy < 10, ]
 
 x <- cmdf %>%
     arrange(-abs(discrepancy)) %>%
@@ -121,7 +123,7 @@ diag_vars <- c(
     "Rhat",
     "khat",
     "converged",
-    "niter",
+    # "niter",
     "n_eff.hmc", "time.hmc", "n_ase",
     "se_mean.hmc", "sd.hmc",
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
@@ -131,7 +133,7 @@ for (type in c("discrepancy")) {
 # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {    
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(size = 0.8) 
+            geom_point(size = 0.8, alpha = 0.6) 
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
@@ -143,11 +145,40 @@ for (type in c("discrepancy")) {
             labs(x = x, y = "Discrepancy")
 
         ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, x, method),
+            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
             width = 7, height = 7
         )
     }
 }
+
+# cmdf <- cmdf[cmdf$n_eff.hmc > 500, ]
+g <- ggplot(cmdf) +
+    aes(n_eff.hmc, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    geom_vline(xintercept = 500, linetype = "dashed") +
+    labs(x = "Effective sample size", y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_ESS_vb.png", fpath, model),
+    width = 5, height = 5
+)
+
+g <- ggplot(cmdf) +
+    aes(khat, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    geom_vline(xintercept = 0.7, linetype = "dashed") +
+    labs(x = expression(hat(K)), y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_khat_vb.png", fpath, model),
+    width = 5, height = 5
+)
+g <- ggplot(cmdf) +
+    aes(niter, discrepancy) +
+    geom_point(size = 0.7, alpha = 0.7) +
+    labs(x = "Number of iterations before convergence", y = "Discrepancy (ADVI - HMC)")
+ggsave(
+    sprintf("%s/%s/diag/disc_niter_vb.png", fpath, model),
+    width = 5, height = 5
+)
 
 g <- ggplot(cmdf) +
     aes(time.hmc, discrepancy) +
@@ -169,7 +200,7 @@ cmdf %>%
     scale_y_log10() -> g
 ggsave(
     sprintf("%s/%s/time/nsnp.png", fpath, model),
-    width = 7, height = 7
+    width = 5, height = 5
 )
 
 
@@ -179,14 +210,14 @@ cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 
 gdf <- group_by(cmdf, gene)
 
-lab_str <- "HMC: %s\nVB: %s\n"
+lab_str <- "HMC: %s\nADVI: %s\n"
 cmdf$nullstr95 <- sprintf(lab_str,
-    ifelse(cmdf$null.95.hmc, "no", "yes"),
-    ifelse(cmdf$null.95.vb, "no", "yes")
+    ifelse(cmdf$null.95.hmc, "yes", "no"),
+    ifelse(cmdf$null.95.vb, "yes", "no")
 )
 cmdf$nullstr99 <- sprintf(lab_str,
-    ifelse(cmdf$null.99.hmc, "no", "yes"),
-    ifelse(cmdf$null.99.vb, "no", "yes")
+    ifelse(cmdf$null.99.hmc, "yes", "no"),
+    ifelse(cmdf$null.99.vb, "yes", "no")
 )
 
 null_levs <- sprintf(
@@ -195,13 +226,18 @@ null_levs <- sprintf(
     c("no", "no",  "yes", "yes")
 )
 null_ord <- null_levs[c(1, 3, 2, 4)]
-scale <- scale_colour_brewer(palette = "Paired", limits = null_levs, name = NULL)
+
+
+scale <- scale_colour_manual(
+    values = setNames(c("#fb9a99", "#e31a1c", "#a6cee3", "#1f78b4"), null_levs),
+    name = "Significance"
+)
 cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
 cmdf$nullstr99 <- factor(cmdf$nullstr99, levels = null_ord)
 
 
 mdfs <- cmdf
-mdfs <- cmdf[cmdf$mean.vb < 2, ]
+mdfs <- cmdf[abs(cmdf$mean.vb) < 2, ]
 lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
 
 g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
@@ -209,8 +245,10 @@ g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
-    labs(x = "MCMC estimate", y = "VB estimate") +
-    scale
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
 ggsave(
     sprintf("%s/%s/estimates/point-estimates-95.png", fpath, model),
     width = 5, height = 5
@@ -221,13 +259,47 @@ g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
-    labs(x = "MCMC estimate", y = "VB estimate") +
-    scale
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
 ggsave(
     sprintf("%s/%s/estimates/point-estimates-99.png", fpath, model),
     width = 5, height = 5
 )
 
+mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
+
+g <- ggplot(mdfss) +
+    aes(mean.hmc, mean.vb, colour = nullstr95) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    geom_point(size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-diff-95.png", fpath, model),
+    width = 5, height = 5
+)
+
+mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
+
+g <- ggplot(mdfss) +
+    aes(mean.hmc, mean.vb, colour = nullstr99) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    geom_point(size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
+    width = 5, height = 5
+)
+stop()
 
 ## by snp
 for (t in c(99, 95)) {
@@ -260,7 +332,6 @@ for (t in c(99, 95)) {
             sum(cmdf$time.hmc[cmdf[[column]]]) + sum(cmdf$time.vb)
         }
     )
-
     g <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
@@ -270,13 +341,14 @@ for (t in c(99, 95)) {
             vjust = -0.2,
             linetype = "dashed"
         ) +
-        geom_text_repel(
-            aes(label = levs), vjust = 1, hjust = 1,
-            segment.color = "grey70"
-        ) +
+        # geom_text_repel(
+        #     aes(label = levs), vjust = 1, hjust = 1,
+        #     segment.color = "grey70"
+        # ) +
         labs(x = "Sensitivity", y = "Total time (s)") +
-        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-        ggtitle("Sensitivity vs total time for ADVI")
+        ylim(0, max(sum(cmdf$time.hmc), time_vb))
+        # +
+        # ggtitle("Sensitivity vs total time for ADVI")
     ggsave(
         sprintf("%s/%s/time/time_vs_sens_vb_%s.png", fpath, model, t),
         width = 5, height = 5
@@ -291,30 +363,75 @@ for (t in c(99, 95)) {
             vjust = -0.2,
             linetype = "dashed"
         ) +
-        geom_text_repel(
-            aes(label = levs), vjust = 1, hjust = 1,
-            segment.color = "grey70"
-        ) +
+        # geom_text_repel(
+        #     aes(label = levs), vjust = 1, hjust = 1,
+        #     segment.color = "grey70"
+        # ) +
         labs(x = "Specificity", y = "Total time (s)") +
-        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-        ggtitle("Specificity vs total time for ADVI")
+        ylim(0, max(sum(cmdf$time.hmc), time_vb))
+        # +
+        # ggtitle("Specificity vs total time for ADVI")
     ggsave(
         sprintf("%s/%s/time/time_vs_spec_vb_%s.png", fpath, model, t),
         width = 5, height = 5
     )
+    # if (t == 99) stop()
+    # min(time_vb[sens_vb == 1] / sum(cmdf$time.hmc))
 
-    stop()
+    pred_vb <- prediction(
+        predictions = cmdf[["prob"]],
+        labels = factor(cmdf[[bc]], levels = c(TRUE, FALSE))
+    )
+
+    perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
+    perf_aupr_vb <- performance(pred_vb, "aucpr")@y.values[[1]]
+    perf_pr_vb <- performance(pred_vb, "prec", "rec")
+    perf_roc_vb <- performance(pred_vb, "tpr", "fpr")
+
     g <- ggplot() +
-        aes(1 - spec_vb, sens_vb) +
-        geom_line() +
-        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-        labs(x = "1 - specificity", y = "Sensitivity") +
-        ggtitle("VB") +
-        lims(x = 0:1, y = 0:1)
+        geom_path(
+            aes(
+                perf_pr_vb@x.values[[1]], perf_pr_vb@y.values[[1]]
+            )
+        ) +
+        lims(x = 0:1, y = 0:1) +
+        labs(x = "Precision", y = "Recall") +
+        scale_colour_brewer(palette = "Set2", name = NULL) +
+        theme(legend.position = "bottom") +
+        ggtitle(sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb))
+    ggsave(
+        sprintf("%s/%s/roc/pr_vb_%s.png", fpath, model, t),
+        width = 5, height = 5
+    )
+
+    g <- ggplot() +
+        geom_path(
+            aes(
+                perf_roc_vb@x.values[[1]], perf_roc_vb@y.values[[1]]
+            )
+        ) +
+        lims(x = 0:1, y = 0:1) +
+        labs(x = "Precision", y = "Recall") +
+        scale_colour_brewer(palette = "Set2", name = NULL) +
+        theme(legend.position = "bottom") +
+        ggtitle(sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb))
     ggsave(
         sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t),
         width = 5, height = 5
     )
+
+
+    # g <- ggplot() +
+    #     aes(1 - spec_vb, sens_vb) +
+    #     geom_line() +
+    #     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    #     labs(x = "1 - specificity", y = "Sensitivity") +
+    #     ggtitle("ADVI") +
+    #     lims(x = 0:1, y = 0:1)
+    # ggsave(
+    #     sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t),
+    #     width = 5, height = 5
+    # )
 }
 
 
@@ -468,7 +585,7 @@ ggsave(
 #         geom_line() +
 #         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
 #         labs(x = "1 - specificity", y = "Sensitivity") +
-#         ggtitle("VB") +
+#         ggtitle("ADVI") +
 #         lims(x = 0:1, y = 0:1)
 #     ggsave(
 #         sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t),

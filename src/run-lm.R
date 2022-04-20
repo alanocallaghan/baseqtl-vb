@@ -1,7 +1,6 @@
 library("baseqtl")
 library("argparse")
 
-
 probs <- seq(0.005, 0.995, by = 0.005)
 dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
 

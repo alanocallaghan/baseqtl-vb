@@ -5,7 +5,7 @@ library("dplyr")
 parser <- ArgumentParser()
 parser$add_argument(
     "-i", "--inference",
-    default = "sampling",
+    default = "vb",
     type = "character"
 )
 parser$add_argument(
@@ -15,7 +15,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 
@@ -41,12 +41,12 @@ if (model == "GT") {
 
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
     
-    outfiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG*", full.names = TRUE)
+    outfiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG.*", full.names = TRUE)
+    outfiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG.*_done", full.names = TRUE)
     genes <- unique(gsub(".*(ENSG\\d+).*", "\\1", outfiles))
     infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
     donefiles <- list.files(sprintf("rds/GT/%s/", mtol), pattern = "ENSG.*_done", full.names = TRUE)
 
- 
     dfs <- parallel::mclapply(
         1:length(genes),
         function(i) {
@@ -134,7 +134,6 @@ if (model == "GT") {
             n_hom = sum(abs(inp1$gase) == 2)
         )
     }
-    stop()
     dfs <- parallel::mclapply(
         1:length(genes),
         function(i) {
@@ -165,12 +164,13 @@ if (model == "GT") {
             covars_pso <- lapply(inp_pso, process_nogt)
             covars_norm <- do.call(rbind, covars_norm)
             covars_pso <- do.call(rbind, covars_pso)
+            covars_norm$snp <- rownames(covars_norm)
+            covars_pso$snp <- rownames(covars_pso)
             covars_norm$condition <- "normal_skin"
             covars_pso$condition <- "Psoriasis_skin"
             covars <- rbind(covars_norm, covars_pso)
             covars$gene <- genes[[i]]
-            covars$snp <- rownames(covars)
-            df_all <- merge(covars, out)
+            df_all <- merge(covars, out, by = c("snp", "gene", "condition"))
             df_all
         },
         mc.cores = 8

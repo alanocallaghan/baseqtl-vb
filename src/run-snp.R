@@ -187,13 +187,12 @@ if (model == "GT") {
                     prob <- mean(extract(post, pars="bj")$bj > 0)
                 }
                 tab <- as.data.frame(tab)
-                if (prob < 0.5) {
-                    prob <- 1 - prob
-                }
+                tab$prob <- ifelse(prob < 0.5, 1 - prob, prob)
                 if (method == "vb") {
                     elbo <- parse_elbo(elbo_text)
                     attr(tab, "elbo") <- elbo
                     tab$converged <- elbo[nrow(elbo), "iter"] != n_iterations
+                    tab$niter <- elbo[nrow(elbo), "iter"]
                 }
                 tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
                 tab$gene <- gene

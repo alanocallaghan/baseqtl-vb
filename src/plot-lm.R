@@ -302,6 +302,7 @@ null_levs <- sprintf(
 null_ord <- null_levs[c(1, 3, 2, 4)]
 scale <- scale_colour_manual(
     values = setNames(c("#fb9a99", "#e31a1c", "#a6cee3", "#1f78b4"), null_levs),
+    drop = TRUE,
     name = "Significance"
 )
 cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
@@ -371,6 +372,7 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
     width = 5, height = 5
 )
+stop()
 
 
 

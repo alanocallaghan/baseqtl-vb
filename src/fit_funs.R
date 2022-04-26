@@ -3,8 +3,8 @@ if (!exists("method")) {
 }
 fun <- match.fun(method)
 
+probs <- seq(0.005, 0.995, by = 0.005)
 if (model == "GT") {
-    probs <- seq(0.005, 0.995, by = 0.005)
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
 
     files <- list.files(dir)
@@ -14,25 +14,48 @@ if (model == "GT") {
 
     ls_mat <- readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/scaled_gc_libsize.rds")
 
-    fit_stan <- function(gene, snp) {
+    fit_stan <- function(gene, snp, init = "random") {
         gene_datas <- readRDS(
             sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, gene)
         )
         x <- gene_datas[[snp]]
-        out <- in.neg.beta.prob.eff2(x)
-        out$cov <- cbind(out$cov, ls_mat[, gene])
-        out$K <- 2
-        out$k <- 2
-        out$aveP <- c(0, 0)
-        out$sdP <- c(0.0309, 0.3479)
-        out$mixP <- c(0.97359164, 0.02640836)
-        capture.output(
-            time <- system.time(
-                post <- fun(
-                    baseqtl:::stanmodels$GT_nb_ase_refbias, data = out
+        data <- in.neg.beta.prob.eff2(x)
+        data$cov <- cbind(data$cov, ls_mat[, gene])
+        data$K <- 2
+        data$k <- 2
+        data$aveP <- c(0, 0)
+        data$sdP <- c(0.0309, 0.3479)
+        data$mixP <- c(0.97359164, 0.02640836)
+        if (init == "opt") {
+            opt_pars <- optimizing(
+                baseqtl:::stanmodels$GT_nb_ase_refbias, data = data
+            )
+            init <- extract_params(opt_pars)
+            if (method == "sampling") {
+                init <- rep(init, 4)
+            }
+        } else if (init == "fixed") {
+            init <- list(
+                betas = c(5, 0),
+                bj = 0,
+                phi = 10,
+                theta = 10,
+                rai0 = rep(0, data$L)
+            )
+        }
+        while (TRUE) {
+            t0 <- proc.time()
+            capture.output(
+                post <- try(
+                    fun(
+                        baseqtl:::stanmodels$GT_nb_ase_refbias, data = data,
+                        init = init
+                    )
                 )
             )
-        )
+            time <- proc.time() - t0
+            if (!inherits(post, "try-error")) break
+        }
         if (method == "optimizing") {
             tab <- posterior::summarise_draws(
                 post$theta_tilde,
@@ -72,12 +95,12 @@ if (model == "GT") {
         Psoriasis_skin = readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/Psoriasis_skin_scaled_gc_libsize.rds")
     )
 
-    fit_stan <- function(gene, snp) {
+    fit_stan <- function(gene, snp, init = "random") {
         files <- c(
             normal_skin = sprintf("%s/refbias.%s.normal_skin.noGT.stan.input.rds", dir, gene),
             Psoriasis_skin = sprintf("%s/refbias.%s.Psoriasis_skin.noGT.stan.input.rds", dir, gene)
         )
-        lapply(names(files),
+        out <- lapply(names(files),
             function(condition) {
                 gene_data_cond <- readRDS(files[[condition]])
                 snp_in <- gene_data_cond[[snp]]
@@ -94,13 +117,35 @@ if (model == "GT") {
                 if (!is.null(data$ai0)) {
                     model <- baseqtl:::stanmodels$noGT_nb_ase_refbias
                 }
-                capture.output(
-                    time <- system.time(
-                        post <- fun(
-                            model, data = data
+
+                if (init == "opt") {
+                    opt_pars <- optimizing(model, data = data)
+                    init <- extract_params(opt_pars)
+                    if (method == "sampling") {
+                        init <- rep(init, 4)
+                    }
+                } else if (init == "fixed") {
+                    init <- list(
+                        betas = c(5, 0),
+                        bj = 0,
+                        phi = 10,
+                        theta = 10,
+                        rai0 = rep(0, data$L)
+                    )
+                }
+                while (TRUE) {
+                    t0 <- proc.time()
+                    capture.output(
+                        post <- try(
+                            fun(
+                                model, data = data,
+                                init = init
+                            )
                         )
                     )
-                )
+                    time <- proc.time() - t0
+                    if (!inherits(post, "try-error")) break
+                }
                 if (method == "optimizing") {
                     tab <- posterior::summarise_draws(
                         post$theta_tilde,
@@ -125,5 +170,32 @@ if (model == "GT") {
                 tab
             }
         )
+        do.call(rbind, out)
     }
+}
+
+
+extract_params <- function(fit) {
+    pars <- gsub("\\[(\\d+,)*\\d+\\]", "", names(fit$par))
+    dims <- gsub("^[a-z0_]+\\[(.*)\\]", "\\1", names(fit$par))
+    out <- lapply(
+        unique(pars),
+        function(p) {
+            ind <- pars == p
+            if (!all(grepl("[", names(fit$par)[ind], fixed = TRUE))) {
+                return(fit$par[ind])
+            }
+            if (!all(grepl(",", names(fit$par)[ind], fixed = TRUE))) {
+                return(fit$par[ind])
+            }
+            l <- strsplit(dims[ind], ",")
+            d <- do.call(rbind, l)
+            d <- matrix(as.numeric(d), ncol = ncol(d))
+            array(
+                fit$par[ind],
+                dim = c(1, apply(d, 2, max))
+            )
+        }
+    )
+    setNames(out, unique(pars))
 }

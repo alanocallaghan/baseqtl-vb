@@ -12,7 +12,7 @@ library("argparse")
 parser <- ArgumentParser()
 parser$add_argument( 
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 parser$add_argument(
@@ -36,18 +36,17 @@ dir.create(fpath, showWarnings = FALSE, recursive = TRUE)
 n_replicates <- 10
 
 method <- "vb"
-vb <- function(...) {
-    rstan::vb(..., tol_rel_obj = tol, iter = 50000)
-}
-source("src/fit_funs.R")
+source("src/functions.R")
+fit_fun <- match.fun(paste("fit_stan", model, sep="_"))
 
 rerun_file <- sprintf("rds/%s_discrepancy_%s_%s_rerun.rds", model, method, tol_str)
 
 if (!file.exists(rerun_file)) {
     rand_res <- parallel::mclapply(1:nrow(df), function(i) {
+        gene_data <- get_gene_data(df[i, "gene"], model)
         out <- replicate(
             n_replicates,
-            fit_stan(df[i, "gene"], df[i, "snp"], init = "random"),
+            fit_fun(gene_data, df[i, "snp"], gene = df[i, "gene"], init = "random"),
             simplify = FALSE
         )
         do.call(rbind, out)
@@ -56,9 +55,10 @@ if (!file.exists(rerun_file)) {
     rand_df$init <- "random"
 
     opt_res <- parallel::mclapply(1:nrow(df), function(i) {
+        gene_data <- get_gene_data(df[i, "gene"], model)
         out <- replicate(
             n_replicates,
-            fit_stan(df[i, "gene"], df[i, "snp"], init = "opt"),
+            fit_fun(gene_data, df[i, "snp"], gene = df[i, "gene"], init = "opt"),
             simplify = FALSE
         )
         do.call(rbind, out)
@@ -67,9 +67,10 @@ if (!file.exists(rerun_file)) {
     opt_df$init <- "opt"
 
     fixed_res <- parallel::mclapply(1:nrow(df), function(i) {
+        gene_data <- get_gene_data(df[i, "gene"], model)
         out <- replicate(
             n_replicates,
-            fit_stan(df[i, "gene"], df[i, "snp"], init = "fixed"),
+            fit_fun(gene_data, df[i, "snp"], gene = df[i, "gene"], init = "fixed"),
             simplify = FALSE
         )
         do.call(rbind, out)
@@ -78,14 +79,52 @@ if (!file.exists(rerun_file)) {
     fixed_df$init <- "fixed"
 
 
-    df_new <- rbind(fixed_df, opt_df, rand_df)
+    fixed_res <- parallel::mclapply(1:nrow(df), function(i) {
+        gene_data <- get_gene_data(df[i, "gene"], model)
+        out <- replicate(
+            n_replicates,
+            fit_fun(gene_data, df[i, "snp"], gene = df[i, "gene"], init = "fixed"),
+            simplify = FALSE
+        )
+        do.call(rbind, out)
+    }, mc.cores = 8)
+    fixed_df <- do.call(rbind, fixed_res)
+    fixed_df$init <- "fixed"
+
+
+    old_res <- parallel::mclapply(1:nrow(df), function(i) {
+        gene_data <- get_gene_data(df[i, "gene"], model)
+        out <- replicate(
+            n_replicates,
+            {
+                init <- list(
+                    betas = c(5, 0),
+                    bj = df[i, "vb"],
+                    phi = 10,
+                    theta = 10,
+                    rai0 = rep(0, data$L)
+                )
+                fit_fun(gene_data, df[i, "snp"], gene = df[i, "gene"], init = "fixed")
+            },
+            simplify = FALSE
+        )
+        do.call(rbind, out)
+    }, mc.cores = 8)
+    old_df <- do.call(rbind, old_res)
+    old_df$init <- "old"
+
+    df_new <- rbind(fixed_df, opt_df, rand_df, old_df)
     saveRDS(df_new, rerun_file)
 }
 df_new <- readRDS(rerun_file)
 
+by <- if (model == "GT") {
+    c("gene", "snp")
+} else c("gene", "snp", "condition")
+
 dfm <- merge(
     df_new[, c("mean", "khat", "time", "gene", "snp", "init")], df,
-    by = c("gene", "snp"),
+    by = by,
     suffixes = c(".new", ".old")
 )
 
@@ -198,7 +237,7 @@ ggsave(sprintf("%s/%s/diag/comp-discrepancy.png", fpath, model), width = 5, heig
 
 # df_lots <- lapply(1:5, function(j) {
 #     new_res <- parallel::mclapply(1:nrow(df), function(i) {
-#         fit_stan(df[i, "gene"], df[i, "snp"])
+#         fit_fun(df[i, "gene"], df[i, "snp"])
 #     }, mc.cores = 5)
 #     df_new <- do.call(rbind, new_res)
 #     dfm <- merge(df_new[, c("mean", "khat", "time", "gene", "snp")], df)

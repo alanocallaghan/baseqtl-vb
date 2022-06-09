@@ -81,21 +81,26 @@ extract_params <- function(fit) {
 
 ## some wrappers to define sensible defaults for stan
 optimizing <- function(...) {
-    rstan::optimizing(..., draws = 1000)
-}
-
-vb <- function(..., tol = 1e-2, n_iterations = 50000) {
-    # rstan::vb(..., grad_samples = 5, elbo_samples = 1000, tol_rel_obj = 1e-3)
-    for (i in 1:10) {
-        f <- try(rstan::vb(..., tol_rel_obj = tol, iter = n_iterations))
+    while (TRUE) {
+        f <- try(rstan::optimizing(...), silent = TRUE)
         if (!inherits(f, "try-error")) {
             return (f)
         }
     }
 }
 
-sampling <- function(...) {
-    rstan::sampling(..., chains = 4, open_progress = FALSE)
+vb <- function(..., tol = 1e-2, n_iterations = 50000) {
+    # rstan::vb(..., grad_samples = 5, elbo_samples = 1000, tol_rel_obj = 1e-3)
+    while (TRUE) {
+        f <- try(rstan::vb(..., tol_rel_obj = tol, iter = n_iterations), silent = TRUE)
+        if (!inherits(f, "try-error")) {
+            return (f)
+        }
+    }
+}
+
+sampling <- function(..., chains = 4) {
+    rstan::sampling(..., chains = chains, open_progress = FALSE)
 }
 
 fit_stan_GT <- function(
@@ -106,8 +111,10 @@ fit_stan_GT <- function(
         init = "random",
         method = c("vb", "sampling", "optimizing"),
         tol = 1e-2,
+        vars = "bj",
         model = baseqtl:::stanmodels$GT_nb_ase_refbias,
-        probs = seq(0.005, 0.995, by = 0.005)
+        probs = seq(0.005, 0.995, by = 0.005),
+        ...
     ) {
 
     method <- match.arg(method)
@@ -120,13 +127,10 @@ fit_stan_GT <- function(
     data$aveP <- c(0, 0)
     data$sdP <- c(0.0309, 0.3479)
     data$mixP <- c(0.97359164, 0.02640836)
-    if (init == "opt") {
+    if (identical(init, "opt")) {
         opt_pars <- optimizing(model, data = data)
         init <- extract_params(opt_pars)
-        if (method == "sampling") {
-            init <- rep(init, 4)
-        }
-    } else if (init == "fixed") {
+    } else if (identical(init, "fixed")) {
         init <- list(
             betas = c(5, 0),
             bj = 0,
@@ -135,12 +139,16 @@ fit_stan_GT <- function(
             rai0 = rep(0, data$L)
         )
     }
+    if (is.list(init) && method == "sampling") {
+        init <- replicate(4, init, simplify = FALSE)
+    }
     t0 <- proc.time()
     capture.output(
         post <- fun(
             model,
             data = data,
-            init = init
+            init = init,
+            ...
         )
     )
     time <- proc.time() - t0
@@ -152,13 +160,17 @@ fit_stan_GT <- function(
             sd,
             ~quantile(.x, probs = probs)
         )
-        tab <- tab[tab$variable == "bj", ]
+        if (!is.null(vars)) {
+            tab <- tab[tab$variable %in% vars, ]
+        }
     } else {
         tab <- rstan::summary(
             post,
-            pars = "bj",
             probs = probs
         )$summary
+        if (!is.null(vars)) {
+            tab <- tab[rownames(tab) %in% vars, ]
+        }
     }
     tab <- as.data.frame(tab)
     tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
@@ -176,7 +188,10 @@ fit_stan_noGT <- function(
         init = "random",
         method = c("vb", "sampling", "optimizing"),
         tol = 1e-2,
-        model = baseqtl:::stanmodels$noGT_nb_ase
+        vars = "bj",
+        model = baseqtl:::stanmodels$noGT_nb_ase,
+        probs = seq(0.005, 0.995, by = 0.005),
+        ...
     ) {
 
     method <- match.arg(method)
@@ -200,13 +215,10 @@ fit_stan_noGT <- function(
             #     model <- baseqtl:::stanmodels$noGT_nb_ase_refbias
             # }
 
-            if (init == "opt") {
-                opt_pars <- optimizing(model, data = data)
+            if (identical(init, "opt")) {
+                opt_pars <- optimizing(model, data = data, hessian = TRUE)
                 init <- extract_params(opt_pars)
-                if (method == "sampling") {
-                    init <- rep(init, 4)
-                }
-            } else if (init == "fixed") {
+            } else if (identical(init, "fixed")) {
                 init <- list(
                     betas = c(5, 0),
                     bj = 0,
@@ -215,11 +227,16 @@ fit_stan_noGT <- function(
                     rai0 = rep(0, data$L)
                 )
             }
+            if (is.list(init) && method == "sampling") {
+                init <- replicate(4, init, simplify = FALSE)
+            }
             t0 <- proc.time()
             capture.output(
                 post <- fun(
-                    model, data = data,
-                    init = init
+                    model,
+                    data = data,
+                    init = init,
+                    ...
                 )
             )
             time <- proc.time() - t0
@@ -230,13 +247,17 @@ fit_stan_noGT <- function(
                     sd,
                     ~quantile(.x, probs = probs)
                 )
-                tab <- tab[tab$variable %in% "bj", ]
+                if (!is.null(vars)) {
+                    tab <- tab[tab$variable %in% vars, ]
+                }
             } else {
                 tab <- rstan::summary(
                     post,
-                    pars = "bj",
                     probs = probs
                 )$summary
+                if (!is.null(vars)) {
+                    tab <- tab[rownames(tab) %in% vars, ]
+                }
             }
             tab <- as.data.frame(tab)
             tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
@@ -286,6 +307,88 @@ get_covariates <- function(model) {
         list(
             normal_skin = readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/normal_skin_scaled_gc_libsize.rds"),
             Psoriasis_skin = readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/Psoriasis_skin_scaled_gc_libsize.rds")
+        )
+    }
+}
+
+fit_mod <- function(model, gene, snp, condition, ...) {
+    if (model == "noGT") {
+        gene_data <- get_gene_data(gene, model)
+        covariates <- get_covariates("noGT")
+
+        snp_in <- gene_data[[condition]][[snp]]
+        data <- in.neg.beta.noGT.eff2(
+            snp_in,
+            covar = covariates[[condition]][names(snp_in$NB$counts), gene, drop = FALSE]
+        )
+        data$k <- 3
+        data$aveP <- c(0, 0, 0)
+        data$sdP <- c(0.0436991990773286, 0.34926955206545, 0.4920048983496)
+        data$mixP <- c(-0.0460439385014068, -3.50655789731998, -4.19970507787993)
+
+        fit <- sampling(
+            baseqtl:::stanmodels$noGT_nb_ase,
+            data = data,
+            ...
+        )
+    } else {
+        gene_data <- get_gene_data(gene, model)
+        covariates <- get_covariates("GT")
+
+        data <- in.neg.beta.prob.eff2(gene_data[[snp]])
+        data$cov <- cbind(data$cov, covariates[, gene])
+        data$K <- 2
+        data$k <- 2
+        data$aveP <- c(0, 0)
+        data$sdP <- c(0.0309, 0.3479)
+        data$mixP <- c(0.97359164, 0.02640836)
+        fit <- sampling(
+            baseqtl:::stanmodels$GT_nb_ase_refbias,
+            data = data,
+            ...
+        )
+    }
+    fit
+}
+
+plot_with_legend_below <- function(
+        ...,
+        rel_heights = if (common_x) c(0.85, 0.05, 0.15) else c(0.85, 0.15),
+        common_x = FALSE,
+        nrow = 1,
+        labels = "AUTO",
+        align = "h",
+        xlab
+    ) {
+    legends <- lapply(list(...), cowplot::get_legend)
+    plots <- list(...)
+    # if (!all(sapply(legends, function(x) identical(x$grobs, legends[[1]]$grobs)))) {
+    #   stop("Different legends shouldn't be merged!")
+    # }
+    t <- theme(legend.position = "none")
+    if (common_x) {
+        t <- t + theme(axis.title.x = element_blank())
+    }
+    together <- cowplot::plot_grid(
+        plotlist = lapply(plots, function(x) x + t),
+        labels = labels,
+        nrow = nrow,
+        align = align
+    )
+    if (common_x) {
+        if (missing(xlab)) {
+            xlab <- rlang::as_label(plots[[1]]$mapping$x)
+        }
+        xlab <- grid::textGrob(
+            xlab,
+            gp = grid::gpar(fontsize = 12)
+        )
+        cowplot::plot_grid(
+            together, xlab, legends[[1]], nrow = 3, rel_heights = rel_heights
+        )
+    } else {
+        cowplot::plot_grid(
+            together, legends[[1]], nrow = 2, rel_heights = rel_heights
         )
     }
 }

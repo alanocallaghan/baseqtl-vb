@@ -4,7 +4,6 @@ library("ggpointdensity")
 library("baseqtl")
 library("viridis")
 library("yardstick")
-library("geomtextpath")
 library("dplyr")
 library("ggrepel")
 library("argparse")
@@ -33,7 +32,9 @@ model <- args[["model"]]
 tol <- args[["tolerance"]]
 
 lm_df <- readRDS(sprintf("rds/%s/lm-filtering.rds", model))
-fpath <- "fig"
+fpath <- sprintf("fig_%1.0e", tol)
+# fpath <- "fig"
+source("src/functions.R")
 
 ################################################################################
 ##
@@ -53,7 +54,6 @@ dfs <- lapply(methods,
         }
     }
 )
-
 
 dfs[] <- lapply(dfs,
     function(df) {
@@ -85,7 +85,6 @@ mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 ## Discrepancy
 ##
 ################################################################################
-
 cmdf <- mdf
 cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
 
@@ -103,7 +102,6 @@ x <- cmdf %>%
         snp,
         gene
     )
-
 saveRDS(x,
     sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
 )
@@ -147,7 +145,7 @@ for (type in c("discrepancy")) {
             labs(x = x, y = "Discrepancy")
 
         ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
+            sprintf("%s/%s/diag/%s_%s_%s.pdf", fpath, model, type, gsub("\\.", "_", x), method),
             width = 7, height = 7
         )
     }
@@ -159,7 +157,7 @@ g <- ggplot(cmdf) +
     geom_vline(xintercept = 500, linetype = "dashed") +
     labs(x = "Effective sample size", y = "Discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_ESS_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_ESS_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 g <- ggplot(cmdf) +
@@ -167,7 +165,7 @@ g <- ggplot(cmdf) +
     geom_point(size = 0.7, alpha = 0.7) +
     labs(x = "Number of iterations before convergence", y = "Discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_niter_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_niter_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -177,7 +175,7 @@ g <- ggplot(cmdf) +
     geom_vline(xintercept = 0.7, linetype = "dashed") +
     labs(x = expression(hat(K)), y = "Discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_khat_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_khat_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -186,18 +184,15 @@ g <- ggplot(cmdf) +
     geom_point() +
     labs(x = "Time taken for HMC (s)", y = "Discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/time_vb.png", fpath, model),
+    sprintf("%s/%s/diag/time_vb.pdf", fpath, model),
     width = 7, height = 7
 )
-
-
 
 ################################################################################
 ##
 ## Time
 ##
 ################################################################################
-
 cmdf %>%
     group_by(gene) %>%
     summarise(time = sum(time.hmc), nsnps = n()) %>%
@@ -209,11 +204,9 @@ cmdf %>%
     scale_x_log10() +
     scale_y_log10() -> g
 ggsave(
-    sprintf("%s/%s/time/nsnp.png", fpath, model),
+    sprintf("%s/%s/time/nsnp.pdf", fpath, model),
     width = 5, height = 5
 )
-
-
 
 g <- ggplot(cmdf) +
     aes(time.hmc, time.vb) +
@@ -225,7 +218,7 @@ g <- ggplot(cmdf) +
     theme(legend.position = "none") +
     labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
 ggsave(
-    sprintf("%s/%s/time/time_hmc_vs_vb.png", fpath, model),
+    sprintf("%s/%s/time/time_hmc_vs_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -263,21 +256,15 @@ g <- ggplot(df_int) +
     ylab("Density") +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/time/time_comparison.png", fpath, model),
+    sprintf("%s/%s/time/time_comparison.pdf", fpath, model),
     width = 5, height = 5
 )
-
-
-
-
 
 ################################################################################
 ##
 ## Point estimates
 ##
 ################################################################################
-
-
 cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 ## from PSIS paper, arxiv 1507.02646
 # cmdf <- cmdf[cmdf$khat < 0.7, ]
@@ -308,13 +295,11 @@ scale <- scale_colour_manual(
 cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
 cmdf$nullstr99 <- factor(cmdf$nullstr99, levels = null_ord)
 
-
-
 mdfs <- cmdf
 mdfs <- cmdf[cmdf$mean.vb < 2, ]
 lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
 
-g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
+gp95 <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -324,11 +309,11 @@ g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-95.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-95.pdf", fpath, model),
     width = 5, height = 5
 )
 
-g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
+gp99 <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -338,13 +323,13 @@ g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-99.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
     width = 5, height = 5
 )
 
 mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 
-g <- ggplot(mdfss) +
+gpd95 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -354,12 +339,52 @@ g <- ggplot(mdfss) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-diff-95.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-diff-95.pdf", fpath, model),
     width = 5, height = 5
 )
 mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
 
-g <- ggplot(mdfss) +
+
+
+# stop()
+
+# mdfss <- mdfss %>% mutate(
+#     hpd_width_hmc = `97.5%.hmc` - `2.5%.hmc`,
+#     hpd_width_vb = `97.5%.vb` - `2.5%.vb`,
+#     hpd_width_ratio = hpd_width_hmc / hpd_width_vb
+# )
+
+# g <- ggplot(mdfss) +
+#     geom_point(aes(mean.hmc, hpd_width_ratio)) +
+#     labs(x = "HMC estimate", y = "HPD interval width ratio (HMC / VB)")
+# ggsave("tmp.pdf")
+# system("convert tmp.pdf tmp.png")
+
+
+# g <- ggplot(mdfss) +
+#     geom_pointrange(
+#         aes(
+#             x = mean.hmc,
+#             xmin = `2.5%.hmc`,
+#             xmax = `97.5%.hmc`,
+#             y = mean.vb
+#         ),
+#         alpha = 0.2
+#     ) +
+#     geom_pointrange(
+#         aes(
+#             x = mean.hmc,
+#             y = mean.vb,
+#             ymin = `2.5%.vb`,
+#             ymax = `97.5%.vb`
+#         ),
+#         alpha = 0.2
+#     )
+# ggsave("tmp.pdf")
+# system("convert tmp.pdf tmp.png")
+
+
+gpd99 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -369,25 +394,47 @@ g <- ggplot(mdfss) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-diff-99.pdf", fpath, model),
     width = 5, height = 5
 )
-stop()
 
-
-
+g <- plot_with_legend_below(
+    gp99 + annotate(
+        geom = "text",
+        x = -1, y = 0.75,
+        hjust = -0.2, vjust = -0.2,
+        fontface = "bold",
+        label = "A"
+    ),
+    gpd99 + annotate(
+        geom = "text",
+        x = -1, y = 0.75,
+        hjust = -0.2, vjust = -0.2,
+        fontface = "bold",
+        label = "B"
+    ) +
+    theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+    ),
+    labels = NULL,
+    common_x = TRUE,
+    xlab = "HMC estimate"
+)
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-both-99.pdf", fpath, model),
+    width = 6, height = 4
+)
 
 ################################################################################
 ##
 ## lm/glm point estimates
 ##
 ################################################################################
-
-
 mdf <- mdf[mdf$n_eff.hmc > minEff & mdf$Rhat < maxRhat, ]
 ## from PSIS paper, arxiv 1507.02646
 # mdf <- mdf[mdf$khat < 0.7, ]
-
 
 rownames(lm_df) <- NULL
 mdf_lm <- merge(mdf, lm_df[lm_df$method == "lm", ],
@@ -409,7 +456,7 @@ g <- ggplot(mdf_lm) +
     labs(x = "BaseQTL estimate (HMC)", y = "lm estimate")
     #  + scale
 ggsave(
-    sprintf("%s/%s/estimates/lm-hmc-95.png", fpath, model),
+    sprintf("%s/%s/estimates/lm-hmc-95.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -423,10 +470,9 @@ g <- ggplot(mdf_glm) +
     labs(x = "BaseQTL estimate (HMC)", y = "glm estimate")
     #  + scale
 ggsave(
-    sprintf("%s/%s/estimates/glm-hmc-95.png", fpath, model),
+    sprintf("%s/%s/estimates/glm-hmc-95.pdf", fpath, model),
     width = 5, height = 5
 )
-
 
 lim <- range(lm_df$coef)
 g <- ggplot() +
@@ -441,7 +487,7 @@ g <- ggplot() +
     labs(x = "lm estimate", y = "glm estimate")
     #  + scale
 ggsave(
-    sprintf("%s/%s/estimates/lm-glm-coef.png", fpath, model),
+    sprintf("%s/%s/estimates/lm-glm-coef.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -460,17 +506,15 @@ g <- ggplot() +
     labs(x = "lm pval (FDR)", y = "glm pval (FDR)")
     #  + scale
 ggsave(
-    sprintf("%s/%s/estimates/lm-glm-pval.png", fpath, model),
+    sprintf("%s/%s/estimates/lm-glm-pval.pdf", fpath, model),
     width = 5, height = 5
 )
-
 
 ################################################################################
 ##
 ## AUPR/AUROC
 ##
 ################################################################################
-
 
 lm_dfs <- lapply(c("lm", "glm"),
     function(lmod) {
@@ -483,13 +527,11 @@ mlm_df <- merge(
     suffixes = c(".lm", ".glm")
 )
 
-
 df <- merge(
     mdf, mlm_df,
     by = c("snp", "gene"),
     suffixes = c(".hmc", ".lm")
 )
-
 
 get_sens_spec <- function(
         truth,
@@ -606,11 +648,16 @@ for (t in c(99, 95)) {
         geom_path(aes(sens_lm, time_lm, colour = "lm")) +
         geom_path(aes(sens_glm, time_glm, colour = "glm")) +
         geom_path(aes(sens_vb, time_vb, colour = "ADVI")) +
-        geom_texthline(
+        geom_hline(
             yintercept = sum(df$time.hmc),
-            label = "Total time without screening", 
-            vjust = -0.2,
             linetype = "dashed"
+        ) +
+        annotate(
+            geom = "text",
+            x = 0.5,
+            y = sum(df$time.hmc),
+            label = "Total time without screening", 
+            vjust = -0.3,
         ) +
         # geom_text_repel(
         #     aes(label = format(thresholds, digits=2)),
@@ -618,35 +665,47 @@ for (t in c(99, 95)) {
         #     segment.color = "grey70"
         # ) +
         labs(x = "Sensitivity", y = "Total time (s)") +
+        # scale_y_log10(
+        #     limits = c(1, max(sum(df$time.hmc), time_vb, time_lm, time_glm))
+        # ) +
         ylim(0, max(sum(df$time.hmc), time_vb, time_lm, time_glm)) +
         scale_colour_brewer(palette = "Set2", name = NULL) +
         theme(legend.position = "bottom")
     ggsave(
-        sprintf("%s/%s/time/time_vs_sens_all_%s.png", fpath, model, t),
-        width = 5, height = 5
+        sprintf("%s/%s/time/time_vs_sens_all_%s.pdf", fpath, model, t),
+        width = 4, height = 4.5
     )
+
 
     g <- ggplot() +
         geom_path(aes(spec_lm, time_lm, colour = "lm")) +
         geom_path(aes(spec_glm, time_glm, colour = "glm")) +
         geom_path(aes(spec_vb, time_vb, colour = "ADVI")) +
-        geom_texthline(
+        geom_hline(
             yintercept = sum(df$time.hmc),
-            label = "Total time without screening", 
-            vjust = -0.2,
             linetype = "dashed"
+        ) +
+        annotate(
+            geom = "text",
+            x = 0.5,
+            y = sum(df$time.hmc),
+            label = "Total time without screening", 
+            vjust = -0.3,
         ) +
         # geom_text_repel(
         #     aes(label = thresholds), vjust = 1, hjust = 1,
         #     segment.color = "grey70"
         # ) +
         labs(x = "Specificity", y = "Total time (s)") +
-        ylim(0, max(sum(df$time.hmc), time_vb, time_lm, time_glm)) +
+        scale_y_log10(
+            limits = c(1, max(sum(df$time.hmc), time_vb, time_lm, time_glm))
+        ) +
+        # ylim(0, max(sum(df$time.hmc), time_vb, time_lm, time_glm)) +
         scale_colour_brewer(palette = "Set2", name = NULL) +
         theme(legend.position = "bottom")
     ggsave(
-        sprintf("%s/%s/time/time_vs_spec_%s.png", fpath, model, t),
-        width = 5, height = 5
+        sprintf("%s/%s/time/time_vs_spec_%s.pdf", fpath, model, t),
+        width = 4, height = 4
     )
 
     pred_lm <- prediction(
@@ -682,19 +741,19 @@ for (t in c(99, 95)) {
         geom_path(
             aes(
                 perf_pr_lm@x.values[[1]], perf_pr_lm@y.values[[1]],
-                colour = sprintf("lm; AUPRC: %0.3f", perf_aupr_lm)
+                colour = sprintf("lm;\nAUPRC: %0.3f", perf_aupr_lm)
             )
         ) +
         geom_path(
             aes(
                 perf_pr_glm@x.values[[1]], perf_pr_glm@y.values[[1]],
-                colour = sprintf("glm; AUPRC: %0.3f", perf_aupr_glm)
+                colour = sprintf("glm;\nAUPRC: %0.3f", perf_aupr_glm)
             )
         ) +
         geom_path(
             aes(
                 perf_pr_vb@x.values[[1]], perf_pr_vb@y.values[[1]],
-                colour = sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb)
+                colour = sprintf("ADVI;\nAUPRC: %0.3f", perf_aupr_vb)
             )
         ) +
         lims(x = 0:1, y = 0:1) +
@@ -702,27 +761,27 @@ for (t in c(99, 95)) {
         scale_colour_brewer(palette = "Set2", name = NULL) +
         theme(legend.position = "bottom")
     ggsave(
-        sprintf("%s/%s/roc/pr_all_%s.png", fpath, model, t),
-        width = 5, height = 5
+        sprintf("%s/%s/roc/pr_all_%s.pdf", fpath, model, t),
+        width = 4, height = 4
     )
 
     g <- ggplot() +
         geom_path(
             aes(
                 perf_roc_lm@x.values[[1]], perf_roc_lm@y.values[[1]],
-                colour = sprintf("lm; AUROC: %0.3f", perf_auroc_lm)
+                colour = sprintf("lm;\nAUROC: %0.3f", perf_auroc_lm)
             )
         ) +
         geom_path(
             aes(
                 perf_roc_glm@x.values[[1]], perf_roc_glm@y.values[[1]],
-                colour = sprintf("glm; AUROC: %0.3f", perf_auroc_glm)
+                colour = sprintf("glm;\nAUROC: %0.3f", perf_auroc_glm)
             )
         ) +
         geom_path(
             aes(
                 perf_roc_vb@x.values[[1]], perf_roc_vb@y.values[[1]],
-                colour = sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb)
+                colour = sprintf("ADVI;\nAUROC: %0.3f", perf_auroc_vb)
             )
         ) +
         lims(x = 0:1, y = 0:1) +
@@ -730,7 +789,7 @@ for (t in c(99, 95)) {
         scale_colour_brewer(palette = "Set2", name = NULL) +
         theme(legend.position = "bottom")
     ggsave(
-        sprintf("%s/%s/roc/roc_all_%s.png", fpath, model, t),
-        width = 5, height = 5
+        sprintf("%s/%s/roc/roc_all_%s.pdf", fpath, model, t),
+        width = 4, height = 4.5
     )
 }

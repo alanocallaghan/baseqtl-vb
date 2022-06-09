@@ -4,7 +4,6 @@ library("ggpointdensity")
 library("baseqtl")
 library("viridis")
 library("yardstick")
-library("geomtextpath")
 library("dplyr")
 library("argparse")
 

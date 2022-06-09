@@ -5,7 +5,6 @@ library("ggpointdensity")
 library("baseqtl")
 library("viridis")
 library("yardstick")
-library("geomtextpath")
 library("dplyr")
 library("ggrepel")
 library("ROCR")
@@ -36,6 +35,8 @@ sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc")), function(
     dir.create(p, showWarnings = FALSE, recursive = TRUE)
 })
 # fpath <- "fig"
+source("src/functions.R")
+
 
 # "optimizing",
 methods <- c("vb", "sampling")
@@ -87,22 +88,42 @@ cmdf <- mdf
 cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
 cmdf <- cmdf[cmdf$discrepancy < 10, ]
 
-x <- cmdf %>%
-    arrange(-abs(discrepancy)) %>%
-    top_n(50, abs(discrepancy)) %>%
-    select(
-        vb = mean.vb,
-        vb_low = `5.0%.vb`,
-        vb_high = `95.0%.vb`,
-        hmc = mean.hmc,
-        hmc_low = `5.0%.hmc`,
-        hmc_high = `95.0%.hmc`,
-        discrepancy = discrepancy,
-        snp,
-        gene
-    )
+if (model == "GT") {
+    disc_df <- cmdf %>%
+        arrange(-abs(discrepancy)) %>%
+        top_n(50, abs(discrepancy)) %>%
+        select(
+            vb = mean.vb,
+            vb_low = `5.0%.vb`,
+            vb_high = `95.0%.vb`,
+            hmc = mean.hmc,
+            hmc_low = `5.0%.hmc`,
+            hmc_high = `95.0%.hmc`,
+            discrepancy = discrepancy,
+            snp,
+            gene
+        )
+} else {
+    disc_df <- cmdf %>%
+        arrange(-abs(discrepancy)) %>%
+        top_n(50, abs(discrepancy)) %>%
+        select(
+            vb = mean.vb,
+            vb_low = `5.0%.vb`,
+            vb_high = `95.0%.vb`,
+            hmc = mean.hmc,
+            hmc_low = `5.0%.hmc`,
+            hmc_high = `95.0%.hmc`,
+            discrepancy = discrepancy,
+            condition = condition,
+            snp = snp,
+            gene = gene
+        )
 
-saveRDS(x,
+}
+
+saveRDS(
+    disc_df,
     sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
 )
 
@@ -153,37 +174,37 @@ for (type in c("discrepancy")) {
 
 # cmdf <- cmdf[cmdf$n_eff.hmc > 500, ]
 g <- ggplot(cmdf) +
-    aes(n_eff.hmc, discrepancy) +
+    aes(n_eff.hmc, abs(discrepancy)) +
     geom_point(size = 0.7, alpha = 0.7) +
     geom_vline(xintercept = 500, linetype = "dashed") +
-    labs(x = "Effective sample size", y = "Discrepancy (ADVI - HMC)")
+    labs(x = "Effective sample size", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/disc_ESS_vb.png", fpath, model),
     width = 5, height = 5
 )
 
 g <- ggplot(cmdf) +
-    aes(khat, discrepancy) +
+    aes(khat, abs(discrepancy)) +
     geom_point(size = 0.7, alpha = 0.7) +
     geom_vline(xintercept = 0.7, linetype = "dashed") +
-    labs(x = expression(hat(K)), y = "Discrepancy (ADVI - HMC)")
+    labs(x = expression(hat(K)), y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/disc_khat_vb.png", fpath, model),
     width = 5, height = 5
 )
 g <- ggplot(cmdf) +
-    aes(niter, discrepancy) +
+    aes(niter, abs(discrepancy)) +
     geom_point(size = 0.7, alpha = 0.7) +
-    labs(x = "Number of iterations before convergence", y = "Discrepancy (ADVI - HMC)")
+    labs(x = "Number of iterations before convergence", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/disc_niter_vb.png", fpath, model),
     width = 5, height = 5
 )
 
 g <- ggplot(cmdf) +
-    aes(time.hmc, discrepancy) +
+    aes(time.hmc, abs(discrepancy)) +
     geom_point() +
-    labs(x = "Time taken for HMC (s)", y = "Discrepancy (ADVI - HMC)")
+    labs(x = "Time taken for HMC (s)", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/time_vb.png", fpath, model),
     width = 7, height = 7
@@ -241,7 +262,7 @@ mdfs <- cmdf
 mdfs <- cmdf[abs(cmdf$mean.vb) < 2, ]
 lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
 
-g <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
+gp95 <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -255,7 +276,7 @@ ggsave(
     width = 5, height = 5
 )
 
-g <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
+gp99 <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -271,7 +292,7 @@ ggsave(
 
 mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 
-g <- ggplot(mdfss) +
+gpd95 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -287,7 +308,7 @@ ggsave(
 
 mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
 
-g <- ggplot(mdfss) +
+gpd99 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(size = 0.5, alpha = 0.7) +
@@ -300,7 +321,40 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
     width = 5, height = 5
 )
-stop()
+
+
+
+g <- plot_with_legend_below(
+    gp99 + annotate(
+        geom = "text",
+        x = -1.5, y = 1.5,
+        hjust = -0.2, vjust = -0.2,
+        fontface = "bold",
+        label = "A"
+    ),
+    gpd99 + annotate(
+        geom = "text",
+        x = -1.5, y = 1.5,
+        hjust = -0.2, vjust = -0.2,
+        fontface = "bold",
+        label = "B"
+    ) +
+    theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+    ),
+    labels = NULL,
+    common_x = TRUE,
+    xlab = "HMC estimate"
+)
+
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-both-99.pdf", fpath, model),
+    width = 6, height = 4
+)
+
+
 
 ## by snp
 for (t in c(99, 95)) {
@@ -336,33 +390,50 @@ for (t in c(99, 95)) {
     g <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
-        geom_texthline(
+        geom_hline(
             yintercept = sum(cmdf$time.hmc),
+            linetype = "dashed"
+        ) +
+        annotate(
+            geom = "text",
+            x = 0.96,
+            y = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
-            linetype = "dashed"
         ) +
         # geom_text_repel(
         #     aes(label = levs), vjust = 1, hjust = 1,
         #     segment.color = "grey70"
         # ) +
-        labs(x = "Sensitivity", y = "Total time (s)") +
-        ylim(0, max(sum(cmdf$time.hmc), time_vb))
+        # scale_y_log10(
+        #     limits = c(1, max(sum(cmdf$time.hmc), time_vb))
+        # ) +
+        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
+        labs(x = "Sensitivity", y = "Total time (s)")
         # +
         # ggtitle("Sensitivity vs total time for ADVI")
     ggsave(
         sprintf("%s/%s/time/time_vs_sens_vb_%s.png", fpath, model, t),
         width = 5, height = 5
     )
+    ggsave(
+        sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, t),
+        width = 3.5, height = 4
+    )
 
     g <- ggplot() +
         aes(spec_vb, time_vb) +
         geom_line() +
-        geom_texthline(
+        geom_hline(
             yintercept = sum(cmdf$time.hmc),
+            linetype = "dashed"
+        ) +
+        annotate(
+            geom = "text",
+            x = median(spec_vb),
+            y = sum(cmdf$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
-            linetype = "dashed"
         ) +
         # geom_text_repel(
         #     aes(label = levs), vjust = 1, hjust = 1,
@@ -404,7 +475,10 @@ for (t in c(99, 95)) {
         sprintf("%s/%s/roc/pr_vb_%s.png", fpath, model, t),
         width = 5, height = 5
     )
-
+    ggsave(
+        sprintf("%s/%s/roc/pr_vb_%s.pdf", fpath, model, t),
+        width = 4, height = 4
+    )
     g <- ggplot() +
         geom_path(
             aes(
@@ -412,7 +486,7 @@ for (t in c(99, 95)) {
             )
         ) +
         lims(x = 0:1, y = 0:1) +
-        labs(x = "Precision", y = "Recall") +
+        labs(x = "Sensitivity", y = "Specificity") +
         scale_colour_brewer(palette = "Set2", name = NULL) +
         theme(legend.position = "bottom") +
         ggtitle(sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb))
@@ -420,7 +494,11 @@ for (t in c(99, 95)) {
         sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t),
         width = 5, height = 5
     )
-
+    g <- g + ggtitle(NULL)
+    ggsave(
+        sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
+        width = 3.5, height = 4
+    )
 
     # g <- ggplot() +
     #     aes(1 - spec_vb, sens_vb) +

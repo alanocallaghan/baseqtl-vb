@@ -86,7 +86,19 @@ mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 ##
 ################################################################################
 cmdf <- mdf
-cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+cmdf <- cmdf %>% mutate(
+    discrepancy = mean.hmc - mean.vb,
+    hpd.width.95.vb = abs(`2.5%.vb` - `97.5%.vb`),
+    hpd.width.95.hmc = abs(`2.5%.hmc` - `97.5%.hmc`),
+    hpd.width.99.vb = abs(`0.5%.vb` - `99.5%.vb`),
+    hpd.width.99.hmc = abs(`0.5%.hmc` - `99.5%.hmc`),
+    discrepancy_95hpdi_width = hpd.width.95.hmc - hpd.width.95.vb,
+    discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb
+)
+cmdf <- cmdf[cmdf$discrepancy < 10, ]
+cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
+## from PSIS paper, arxiv 1507.02646
+# cmdf <- cmdf[cmdf$khat < 0.7, ]
 
 x <- cmdf %>%
     arrange(-abs(discrepancy)) %>%
@@ -105,6 +117,10 @@ x <- cmdf %>%
 saveRDS(x,
     sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
 )
+
+cmdf <- cmdf %>%
+    arrange(-abs(discrepancy))
+cmdf$top50 <- c(rep(TRUE, 50), rep(FALSE, nrow(cmdf) - 50))
 
 cmdf <- cmdf %>%
     mutate(
@@ -128,12 +144,12 @@ diag_vars <- c(
     "se_mean.hmc", "sd.hmc",
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
-cmdf$converged <- factor(cmdf$converged)
-for (type in c("discrepancy")) {
+cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
+for (type in c("discrepancy", "discrepancy_99hpdi_width")) {
 # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {    
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(size = 0.8) 
+            geom_point(size = 0.8, aes(colour = top50))
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
@@ -141,12 +157,13 @@ for (type in c("discrepancy")) {
             aes_string(x, sprintf("abs(%s)", type)) +
             geom +
             geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+            scale_colour_brewer(palette = "Set1", name = "Top 50") +
             # scale_y_log10() +
-            labs(x = x, y = "Discrepancy")
+            labs(x = x, y = type)
 
         ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.pdf", fpath, model, type, gsub("\\.", "_", x), method),
-            width = 7, height = 7
+            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
+            width = 6.5, height = 3
         )
     }
 }
@@ -265,7 +282,6 @@ ggsave(
 ## Point estimates
 ##
 ################################################################################
-cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 ## from PSIS paper, arxiv 1507.02646
 # cmdf <- cmdf[cmdf$khat < 0.7, ]
 
@@ -326,6 +342,26 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
     width = 5, height = 5
 )
+make_crosstab(
+    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    xn = "HMC",
+    yn = "ADVI",
+    caption = "Confusion matrix of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with known genotypes",
+    label = "tab:gt-xtab-99",
+    file = "table/GT-xtab-99.tex"
+)
+
+make_crosstab(
+    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    xn = "HMC",
+    yn = "ADVI",
+    prop = TRUE,
+    caption = "Cross-tabulation of proportion of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with known genotypes.",
+    label = "tab:gt-xtab-prop-99",
+    file = "table/GT-xtab-prop-99.tex"
+)
 
 mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 
@@ -345,43 +381,57 @@ ggsave(
 mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
 
 
+mdfss <- mdfss %>% mutate(
+    hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
+    hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
+    hpd_width_ratio = hpd_width_hmc / hpd_width_vb
+)
 
-# stop()
-
-# mdfss <- mdfss %>% mutate(
-#     hpd_width_hmc = `97.5%.hmc` - `2.5%.hmc`,
-#     hpd_width_vb = `97.5%.vb` - `2.5%.vb`,
-#     hpd_width_ratio = hpd_width_hmc / hpd_width_vb
-# )
+limv <- range(c(
+    mdfss[["0.5%.hmc"]], mdfss[["99.5%.hmc"]],
+    mdfss[["0.5%.vb"]], mdfss[["99.5%.vb"]]
+))
+g <- ggplot(mdfss) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            xmin = `0.5%.hmc`,
+            xmax = `99.5%.hmc`,
+            colour = nullstr99,
+            y = mean.vb
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            y = mean.vb,
+            ymin = `0.5%.vb`,
+            colour = nullstr99,
+            ymax = `99.5%.vb`
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    lims(x = limv, y = limv) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    theme(legend.position = "below") +
+    # guides(colour = guide_legend(override.aes = list(size = 2))) +
+    scale
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
+    width = 4, height = 4
+)
 
 # g <- ggplot(mdfss) +
 #     geom_point(aes(mean.hmc, hpd_width_ratio)) +
 #     labs(x = "HMC estimate", y = "HPD interval width ratio (HMC / VB)")
-# ggsave("tmp.pdf")
-# system("convert tmp.pdf tmp.png")
+# ggsave("tmp2.pdf")
+# system("convert tmp2.pdf tmp2.png")
 
-
-# g <- ggplot(mdfss) +
-#     geom_pointrange(
-#         aes(
-#             x = mean.hmc,
-#             xmin = `2.5%.hmc`,
-#             xmax = `97.5%.hmc`,
-#             y = mean.vb
-#         ),
-#         alpha = 0.2
-#     ) +
-#     geom_pointrange(
-#         aes(
-#             x = mean.hmc,
-#             y = mean.vb,
-#             ymin = `2.5%.vb`,
-#             ymax = `97.5%.vb`
-#         ),
-#         alpha = 0.2
-#     )
-# ggsave("tmp.pdf")
-# system("convert tmp.pdf tmp.png")
 
 
 gpd99 <- ggplot(mdfss) +

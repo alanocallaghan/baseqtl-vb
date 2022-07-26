@@ -89,10 +89,10 @@ optimizing <- function(...) {
     }
 }
 
-vb <- function(..., tol = 1e-2, n_iterations = 50000) {
+vb <- function(..., tol_rel_obj = 1e-2, n_iterations = 50000) {
     # rstan::vb(..., grad_samples = 5, elbo_samples = 1000, tol_rel_obj = 1e-3)
     while (TRUE) {
-        f <- try(rstan::vb(..., tol_rel_obj = tol, iter = n_iterations), silent = TRUE)
+        f <- try(rstan::vb(..., tol_rel_obj = tol_rel_obj, iter = n_iterations), silent = TRUE)
         if (!inherits(f, "try-error")) {
             return (f)
         }
@@ -114,9 +114,9 @@ fit_stan_GT <- function(
         vars = "bj",
         model = baseqtl:::stanmodels$GT_nb_ase_refbias,
         probs = seq(0.005, 0.995, by = 0.005),
+        summarise_posterior = TRUE,
         ...
     ) {
-
     method <- match.arg(method)
     fun <- match.fun(method)
     
@@ -127,6 +127,7 @@ fit_stan_GT <- function(
     data$aveP <- c(0, 0)
     data$sdP <- c(0.0309, 0.3479)
     data$mixP <- c(0.97359164, 0.02640836)
+
     if (identical(init, "opt")) {
         opt_pars <- optimizing(model, data = data)
         init <- extract_params(opt_pars)
@@ -152,7 +153,18 @@ fit_stan_GT <- function(
         )
     )
     time <- proc.time() - t0
+    if (!summarise_posterior) {
+        return(post)
+    }
+    
+    tab <- summarise(post, method, vars, probs)
+    tab$gene <- gene
+    tab$time <- time[["elapsed"]]
+    tab$snp <- snp
+    tab
+}
 
+summarise <- function(post, method, vars, probs) {
     if (method == "optimizing") {
         tab <- posterior::summarise_draws(
             post$theta_tilde,
@@ -174,9 +186,6 @@ fit_stan_GT <- function(
     }
     tab <- as.data.frame(tab)
     tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
-    tab$gene <- gene
-    tab$time <- time[["elapsed"]]
-    tab$snp <- snp
     tab
 }
 
@@ -191,6 +200,7 @@ fit_stan_noGT <- function(
         vars = "bj",
         model = baseqtl:::stanmodels$noGT_nb_ase,
         probs = seq(0.005, 0.995, by = 0.005),
+        summarise_posterior = TRUE,
         ...
     ) {
 
@@ -240,30 +250,13 @@ fit_stan_noGT <- function(
                 )
             )
             time <- proc.time() - t0
-            if (method == "optimizing") {
-                tab <- posterior::summarise_draws(
-                    post$theta_tilde,
-                    mean,
-                    sd,
-                    ~quantile(.x, probs = probs)
-                )
-                if (!is.null(vars)) {
-                    tab <- tab[tab$variable %in% vars, ]
-                }
-            } else {
-                tab <- rstan::summary(
-                    post,
-                    probs = probs
-                )$summary
-                if (!is.null(vars)) {
-                    tab <- tab[rownames(tab) %in% vars, ]
-                }
+            if (!summarise_posterior) {
+                return(post)
             }
-            tab <- as.data.frame(tab)
-            tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
+            tab <- summarise(post, method, vars, probs)
             tab$gene <- gene
-            tab$snp <- snp
             tab$time <- time[["elapsed"]]
+            tab$snp <- snp
             tab$condition <- condition
             tab
         }
@@ -311,7 +304,8 @@ get_covariates <- function(model) {
     }
 }
 
-fit_mod <- function(model, gene, snp, condition, ...) {
+fit_mod <- function(model, gene, snp, condition, method = "sampling", stanmodel = NULL, ...) {
+    fun <- match.fun(method)
     if (model == "noGT") {
         gene_data <- get_gene_data(gene, model)
         covariates <- get_covariates("noGT")
@@ -326,8 +320,9 @@ fit_mod <- function(model, gene, snp, condition, ...) {
         data$sdP <- c(0.0436991990773286, 0.34926955206545, 0.4920048983496)
         data$mixP <- c(-0.0460439385014068, -3.50655789731998, -4.19970507787993)
 
-        fit <- sampling(
-            baseqtl:::stanmodels$noGT_nb_ase,
+        stanmodel <- stanmodel %||% baseqtl:::stanmodels$noGT_nb_ase
+        fit <- fun(
+            stanmodel,
             data = data,
             ...
         )
@@ -342,8 +337,9 @@ fit_mod <- function(model, gene, snp, condition, ...) {
         data$aveP <- c(0, 0)
         data$sdP <- c(0.0309, 0.3479)
         data$mixP <- c(0.97359164, 0.02640836)
-        fit <- sampling(
-            baseqtl:::stanmodels$GT_nb_ase_refbias,
+        stanmodel <- stanmodel %||% baseqtl:::stanmodels$GT_nb_ase_refbias
+        fit <- fun(
+            stanmodel,
             data = data,
             ...
         )
@@ -391,4 +387,53 @@ plot_with_legend_below <- function(
             together, legends[[1]], nrow = 2, rel_heights = rel_heights
         )
     }
+}
+
+
+# make a latex crosstab with suitable lines and labels
+make_crosstab <- function(x, y, xn = "x", yn = "y", file = "", prop = FALSE, ...) {
+    x <- factor(x)
+    y <- factor(y)
+    tab <- table(x, y)
+    if (prop) {
+        tab <- tab / sum(tab)
+        tab <- round(tab, digits = 3)
+    }
+    tab <- as.data.frame(matrix(tab, ncol = nlevels(y)))
+    colnames(tab) <- levels(y)
+    tab <- cbind(" " = c(xn, rep(" ", length.out = nlevels(x) - 1)), " " = levels(x), tab)
+    tab <- rbind(
+        c("", "", yn, rep("", nlevels(y) - 1)),
+        c(" ", " ", levels(y)),
+        tab
+    )
+    xt <- xtable::xtable(
+        tab,
+        format = "latex",
+        align = paste0("rrr|", paste(rep("r", nlevels(y)), collapse = "")),
+        col.names = NULL,
+        ...
+    )
+    print(xt,
+        include.rownames = FALSE,
+        include.colnames = FALSE,
+        hline.after = 2,
+        file = file
+    )
+
+}
+
+expanded_range <- function(x, frac = 0.01, maxabs = NULL) {
+    r <- range(x)
+    d <- abs(r[[1]] - r[[2]])
+    r[[1]] <- r[[1]] - (d * (1 + frac))
+    r[[2]] <- r[[2]] + (d * (1 + frac))
+    if (!is.null(maxabs)) {
+        r[abs(r) > maxabs] <- maxabs * sign(r)
+    }
+    r
+}
+
+`%||%` <- function(a, b) {
+    if (is.null(a)) b else a
 }

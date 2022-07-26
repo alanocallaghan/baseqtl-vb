@@ -103,7 +103,8 @@ g <- ggplot(grid) +
         linetype = "dashed",
         aes(colour = "VB")
     ) +
-    scale_fill_viridis()
+    scale_fill_viridis() +
+    labs(x = Tex("\\beta_j"), y = Tex("\\gamma_0"))
 ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta1.png", fpath, model, mygene, mysnp, mycondition))
 
 
@@ -149,7 +150,8 @@ g <- ggplot(grid) +
         linetype = "dashed",
         aes(colour = "VB")
     ) +
-    scale_fill_viridis()
+    scale_fill_viridis() +
+    labs(x = Tex("\\beta_j"), y = Tex("\\gamma_1"))
 ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta2.png", fpath, model, mygene, mysnp, mycondition))
 
 

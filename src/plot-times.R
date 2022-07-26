@@ -14,7 +14,7 @@ theme_set(theme_bw())
 parser <- ArgumentParser()
 parser$add_argument( 
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 parser$add_argument(
@@ -85,8 +85,19 @@ by <- if (model == "GT") {
 mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
 cmdf <- mdf
-cmdf <- cmdf %>% mutate(discrepancy = mean.hmc - mean.vb)
+cmdf <- cmdf %>% mutate(
+    discrepancy = mean.hmc - mean.vb,
+    hpd.width.95.vb = abs(`2.5%.vb` - `97.5%.vb`),
+    hpd.width.95.hmc = abs(`2.5%.hmc` - `97.5%.hmc`),
+    hpd.width.99.vb = abs(`0.5%.vb` - `99.5%.vb`),
+    hpd.width.99.hmc = abs(`0.5%.hmc` - `99.5%.hmc`),
+    discrepancy_95hpdi_width = hpd.width.95.hmc - hpd.width.95.vb,
+    discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb
+)
 cmdf <- cmdf[cmdf$discrepancy < 10, ]
+cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
+## from PSIS paper, arxiv 1507.02646
+# cmdf <- cmdf[cmdf$khat < 0.7, ]
 
 if (model == "GT") {
     disc_df <- cmdf %>%
@@ -127,6 +138,11 @@ saveRDS(
     sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
 )
 
+
+cmdf <- cmdf %>%
+    arrange(-abs(discrepancy))
+cmdf$top50 <- c(rep(TRUE, 50), rep(FALSE, nrow(cmdf) - 50))
+
 cmdf <- cmdf %>%
     mutate(
         disc_sc_sdh = discrepancy / sd.hmc,
@@ -144,30 +160,31 @@ diag_vars <- c(
     "Rhat",
     "khat",
     "converged",
-    # "niter",
+    "niter",
     "n_eff.hmc", "time.hmc", "n_ase",
     "se_mean.hmc", "sd.hmc",
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
-cmdf$converged <- factor(cmdf$converged)
-for (type in c("discrepancy")) {
+cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
+for (type in c("discrepancy", "discrepancy_99hpdi_width")) {
 # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {    
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(size = 0.8, alpha = 0.6) 
+            geom_point(size = 0.8, alpha = 0.6, aes(colour = top50))
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
-        g <- ggplot(cmdf) +
+        g <- ggplot(arrange(cmdf, abs(discrepancy))) +
             aes_string(x, sprintf("abs(%s)", type)) +
             geom +
             geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
-            # scale_y_log10() +
-            labs(x = x, y = "Discrepancy")
+            scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
+            scale_y_log10() +
+            labs(x = x, y = type)
 
         ggsave(
             sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
-            width = 7, height = 7
+            width = 6.5, height = 3
         )
     }
 }
@@ -179,7 +196,7 @@ g <- ggplot(cmdf) +
     geom_vline(xintercept = 500, linetype = "dashed") +
     labs(x = "Effective sample size", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_ESS_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_ESS_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -189,7 +206,7 @@ g <- ggplot(cmdf) +
     geom_vline(xintercept = 0.7, linetype = "dashed") +
     labs(x = expression(hat(K)), y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_khat_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_khat_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 g <- ggplot(cmdf) +
@@ -197,7 +214,7 @@ g <- ggplot(cmdf) +
     geom_point(size = 0.7, alpha = 0.7) +
     labs(x = "Number of iterations before convergence", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/disc_niter_vb.png", fpath, model),
+    sprintf("%s/%s/diag/disc_niter_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -206,7 +223,7 @@ g <- ggplot(cmdf) +
     geom_point() +
     labs(x = "Time taken for HMC (s)", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
-    sprintf("%s/%s/diag/time_vb.png", fpath, model),
+    sprintf("%s/%s/diag/time_vb.pdf", fpath, model),
     width = 7, height = 7
 )
 
@@ -220,14 +237,10 @@ cmdf %>%
     scale_x_log10() +
     scale_y_log10() -> g
 ggsave(
-    sprintf("%s/%s/time/nsnp.png", fpath, model),
+    sprintf("%s/%s/time/nsnp.pdf", fpath, model),
     width = 5, height = 5
 )
 
-
-cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
-## from PSIS paper, arxiv 1507.02646
-# cmdf <- cmdf[cmdf$khat < 0.7, ]
 
 gdf <- group_by(cmdf, gene)
 
@@ -272,7 +285,7 @@ gp95 <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-95.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-95.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -286,9 +299,30 @@ gp99 <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-99.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
     width = 5, height = 5
 )
+make_crosstab(
+    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    xn = "HMC",
+    yn = "ADVI",
+    caption = "Confusion matrix of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes",
+    label = "tab:nogt-xtab-99",
+    file = "table/noGT-xtab-99.tex"
+)
+make_crosstab(
+    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    xn = "HMC",
+    yn = "ADVI",
+    prop = TRUE,
+    caption = "Cross-tabulation of proportion of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes.",
+    label = "tab:nogt-xtab-prop-99",
+    file = "table/noGT-xtab-prop-99.tex"
+)
+
+
 
 mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 
@@ -302,7 +336,7 @@ gpd95 <- ggplot(mdfss) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-diff-95.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-diff-95.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -318,10 +352,55 @@ gpd99 <- ggplot(mdfss) +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/estimates/point-estimates-diff-99.png", fpath, model),
+    sprintf("%s/%s/estimates/point-estimates-diff-99.pdf", fpath, model),
     width = 5, height = 5
 )
 
+
+mdfss <- mdfss %>% mutate(
+    hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
+    hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
+    hpd_width_ratio = hpd_width_hmc / hpd_width_vb
+)
+
+limv <- range(c(
+    mdfss[["0.5%.hmc"]], mdfss[["99.5%.hmc"]],
+    mdfss[["0.5%.vb"]], mdfss[["99.5%.vb"]]
+))
+g <- ggplot(mdfss) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            xmin = `0.5%.hmc`,
+            xmax = `99.5%.hmc`,
+            colour = nullstr99,
+            y = mean.vb
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            y = mean.vb,
+            ymin = `0.5%.vb`,
+            colour = nullstr99,
+            ymax = `99.5%.vb`
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    lims(x = limv, y = limv) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    theme(legend.position = "below") +
+    # guides(colour = guide_legend(override.aes = list(size = 2))) +
+    scale
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
+    width = 4, height = 4
+)
 
 
 g <- plot_with_legend_below(
@@ -413,7 +492,7 @@ for (t in c(99, 95)) {
         # +
         # ggtitle("Sensitivity vs total time for ADVI")
     ggsave(
-        sprintf("%s/%s/time/time_vs_sens_vb_%s.png", fpath, model, t),
+        sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, t),
         width = 5, height = 5
     )
     ggsave(
@@ -444,14 +523,15 @@ for (t in c(99, 95)) {
         # +
         # ggtitle("Specificity vs total time for ADVI")
     ggsave(
-        sprintf("%s/%s/time/time_vs_spec_vb_%s.png", fpath, model, t),
+        sprintf("%s/%s/time/time_vs_spec_vb_%s.pdf", fpath, model, t),
         width = 5, height = 5
     )
     # if (t == 99) stop()
     # min(time_vb[sens_vb == 1] / sum(cmdf$time.hmc))
 
+    prob <- cmdf[["prob.vb"]] %||% cmdf[["prob"]]
     pred_vb <- prediction(
-        predictions = cmdf[["prob"]],
+        predictions = prob,
         labels = factor(cmdf[[bc]], levels = c(TRUE, FALSE))
     )
 
@@ -472,7 +552,7 @@ for (t in c(99, 95)) {
         theme(legend.position = "bottom") +
         ggtitle(sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb))
     ggsave(
-        sprintf("%s/%s/roc/pr_vb_%s.png", fpath, model, t),
+        sprintf("%s/%s/roc/pr_vb_%s.pdf", fpath, model, t),
         width = 5, height = 5
     )
     ggsave(
@@ -491,7 +571,7 @@ for (t in c(99, 95)) {
         theme(legend.position = "bottom") +
         ggtitle(sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb))
     ggsave(
-        sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t),
+        sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
         width = 5, height = 5
     )
     g <- g + ggtitle(NULL)
@@ -508,7 +588,7 @@ for (t in c(99, 95)) {
     #     ggtitle("ADVI") +
     #     lims(x = 0:1, y = 0:1)
     # ggsave(
-    #     sprintf("%s/%s/roc/roc_vb_%s.png", fpath, model, t),
+    #     sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
     #     width = 5, height = 5
     # )
 }
@@ -524,7 +604,7 @@ g <- ggplot(cmdf) +
     theme(legend.position = "none") +
     labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
 ggsave(
-    sprintf("%s/%s/time/time_hmc_vs_vb.png", fpath, model),
+    sprintf("%s/%s/time/time_hmc_vs_vb.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -563,7 +643,7 @@ g <- ggplot(df_int) +
     ylab("Density") +
     theme(legend.position = "bottom")
 ggsave(
-    sprintf("%s/%s/time/time_comparison.png", fpath, model),
+    sprintf("%s/%s/time/time_comparison.pdf", fpath, model),
     width = 5, height = 5
 )
 
@@ -634,7 +714,7 @@ ggsave(
 #         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
 #         ggtitle("Sensitivity vs total time for ADVI")
 #     ggsave(
-#         sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.png", fpath, model, t),
+#         sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.pdf", fpath, model, t),
 #         width = 5, height = 5
 #     )
 
@@ -655,7 +735,7 @@ ggsave(
 #         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
 #         ggtitle("Specificity vs total time for ADVI")
 #     ggsave(
-#         sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.png", fpath, model, t),
+#         sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.pdf", fpath, model, t),
 #         width = 5, height = 5
 #     )
 
@@ -667,7 +747,7 @@ ggsave(
 #         ggtitle("ADVI") +
 #         lims(x = 0:1, y = 0:1)
 #     ggsave(
-#         sprintf("%s/%s/roc/roc_vb_gene_%s.png", fpath, model, t),
+#         sprintf("%s/%s/roc/roc_vb_gene_%s.pdf", fpath, model, t),
 #         width = 5, height = 5
 #     )
 # }

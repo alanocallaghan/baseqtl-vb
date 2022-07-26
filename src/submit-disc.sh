@@ -7,8 +7,9 @@
 #SBATCH -e %j.err
 #SBATCH --time=10:00:00
 
-. ~/miniconda3/etc/profile.d/conda.sh
-conda activate r-41
+# . ~/miniconda3/etc/profile.d/conda.sh
+# conda activate r-41
+module activate R/4.2.0-icelake
 
 echo "running src/analyse-discrepant.R -m GT" && Rscript src/analyse-discrepant.R -m GT
 echo "running src/analyse-discrepant.R -m noGT" && Rscript src/analyse-discrepant.R -m noGT

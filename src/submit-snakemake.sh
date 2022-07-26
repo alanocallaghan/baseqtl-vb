@@ -7,3 +7,4 @@
 . ~/miniconda3/etc/profile.d/conda.sh
 conda activate
 snakemake -j 100 --profile slurm
+

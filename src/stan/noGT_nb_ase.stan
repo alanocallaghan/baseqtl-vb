@@ -34,11 +34,11 @@ transformed data {
 
 
 parameters {
-  vector<lower=-10, upper=10>[K]betas; // regression param
+  vector <lower=-10, upper=10>[K]betas; // regression param
 
-  real <lower=-10,upper=10> bj; // log fold change ASE
-  real<lower=1e-5,upper=1e5> phi; //overdipersion param for neg binom
-  real<lower=1e-5,upper=1e5> theta; //the overdispersion parameter for beta binomial
+  real <lower=-10, upper=10> bj; // log fold change ASE
+  real <lower=1e-5, upper=1e5> phi; //overdipersion param for neg binom
+  real <lower=1e-5, upper=1e5> theta; //the overdispersion parameter for beta binomial
 }
 
 model {

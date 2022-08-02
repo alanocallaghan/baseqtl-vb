@@ -1,6 +1,7 @@
 library("ggplot2")
 library("ggdist")
 library("ggpointdensity")
+library("cowplot")
 library("baseqtl")
 library("viridis")
 library("yardstick")
@@ -694,7 +695,7 @@ for (t in c(99, 95)) {
     # if (t == 99) stop()
     min(time_vb[sens_vb == 1] / sum(df$time.hmc))
 
-    g <- ggplot() +
+    gtime <- ggplot() +
         geom_path(aes(sens_lm, time_lm, colour = "lm")) +
         geom_path(aes(sens_glm, time_glm, colour = "glm")) +
         geom_path(aes(sens_vb, time_vb, colour = "ADVI")) +
@@ -815,7 +816,7 @@ for (t in c(99, 95)) {
         width = 4, height = 4
     )
 
-    g <- ggplot() +
+    groc <- ggplot() +
         geom_path(
             aes(
                 perf_roc_lm@x.values[[1]], perf_roc_lm@y.values[[1]],
@@ -841,5 +842,11 @@ for (t in c(99, 95)) {
     ggsave(
         sprintf("%s/%s/roc/roc_all_%s.pdf", fpath, model, t),
         width = 4, height = 4.5
+    )
+
+    plot_with_legend_below(groc, gtime, labels = "AUTO")
+    ggsave(
+        sprintf("%s/%s/roc/time_roc_all_%s.pdf", fpath, model, t),
+        width = 8, height = 4.5
     )
 }

@@ -15,7 +15,7 @@ rstan_options(auto_write = TRUE)
 parser <- ArgumentParser()
 parser$add_argument( 
     "-m", "--model",
-    default = "GT",
+    default = "noGT",
     type = "character"
 )
 parser$add_argument(
@@ -54,6 +54,8 @@ init_types <- c("random", "fixed", "old")
 rerun_files <- sprintf("rds/%s_discrepancy_%s_rerun_%s.rds", model, tol_str, init_types)
 
 fit_fun <- match.fun(paste("fit_stan", model, sep = "_"))
+set.seed(42)
+
 
 
 
@@ -94,46 +96,6 @@ if (!all(file.exists(rerun_files))) {
         mc.cores = 8
     )
     saveRDS(full_posteriors_vb, sprintf("rds/%s_full_posterior_discrepant_vb.rds", model))
-
-    df_slabplot <- lapply(1:length(full_posteriors_hmc), function(i) {
-        rbind(
-            data.frame(
-                method = "hmc",
-                bj = extract(full_posteriors_hmc[[i]], par="bj")$bj,
-                association = as.character(i),
-                chain = rep(1:4, each = 1000)
-            ),
-            data.frame(
-                method = "vb",
-                bj = extract(full_posteriors_vb[[i]], par="bj")$bj,
-                association = as.character(i),
-                chain = "vb"
-            )
-        )
-    })
-    df_slabplot <- do.call(rbind, df_slabplot)
-    g <- ggplot(df_slabplot) +
-        aes(x = association, y = bj, group = method, fill = chain, colour = chain, order = chain) +
-        geom_dots(position = position_dodge(), scale = 0.8) +
-        labs(x = "Association", y = TeX("$\\beta_j$")) +
-        scale_fill_manual(
-            name = "Chain",
-            aesthetics = c("fill", "colour"),
-            values = setNames(
-                c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "grey80"),
-                c(1:4, "vb")
-            )
-        ) +
-        theme_bw() +
-        theme(
-            legend.position = "bottom",
-            axis.text.x = element_blank()
-        )
-
-    ggsave("tmp.png", width = 20, height = 5)
-
-    ## filter to one association
-    ## plot two density plots - one for VB, one stacked + split by colour for HMC
 
     fr_res <- parallel::mclapply(1:nrow(df), function(i) {
         gene_data <- get_gene_data(df[i, "gene"], model)
@@ -255,7 +217,6 @@ if (!all(file.exists(rerun_files))) {
     )
     rerun_df <- do.call(rbind, rerun_hmc)
     saveRDS(rerun_df, sprintf("rds/%s_rerun_discrepant_full.rds", model))
-
 }
 
 dfs <- lapply(rerun_files, readRDS)
@@ -400,37 +361,110 @@ ggsave(sprintf("%s/%s/diag/comp-discrepancy.png", fpath, model), width = 5, heig
 
 
 
+## posterior samples HMC vs VB, split by chain 
+full_posteriors_vb <- readRDS(sprintf("rds/%s_full_posterior_discrepant_vb.rds", model))
+full_posteriors_hmc <- readRDS(sprintf("rds/%s_full_posterior_discrepant_hmc.rds", model))
+
+## if noGT, full_posteriors_hmc[[i]] and full_posteriors_vb[[i]] are lists
+if (model == "noGT") {
+    dfs_slabplot <- lapply(1:length(full_posteriors_hmc), function(i) {
+        dfh <- data.frame(
+            method = "hmc",
+            association = as.character(i),
+            chain = as.character(rep(1:4, each = 1000))
+        )
+        dfh[, names(full_posteriors_hmc[[i]])] <- sapply(
+            full_posteriors_hmc[[i]], function(x) extract(x, par="bj")$bj
+        )
+        dfv <- data.frame(
+            method = "vb",
+            association = as.character(i),
+            chain = as.character(rep(1:4, each = 1000))
+        )
+        dfv[, names(full_posteriors_vb[[i]])] <- sapply(
+            full_posteriors_vb[[i]], function(x) extract(x, par="bj")$bj
+        )
+        df <- rbind(dfh, dfv)
+        df <- reshape2::melt(df, id.vars=c("method", "association", "chain"))
+        colnames(df)[4:5] <- c("condition", "bj")
+        df
+    })
+} else {
+    dfs_slabplot <- lapply(1:length(full_posteriors_hmc), function(i) {
+        rbind(
+            data.frame(
+                method = "hmc",
+                bj = extract(full_posteriors_hmc[[i]], par="bj")$bj,
+                association = as.character(i),
+                chain = rep(1:4, each = 1000)
+            ),
+            data.frame(
+                method = "vb",
+                bj = extract(full_posteriors_vb[[i]], par="bj")$bj,
+                association = as.character(i),
+                chain = "vb"
+            )
+        )
+    })
+}
+
+df_slabplot <- do.call(rbind, dfs_slabplot)
+df_slabplot <- df_slabplot %>% filter(association %in% c(1:15))
+
+df_slabplot$association_condition <- paste(df_slabplot$association, df_slabplot$condition)
+plot_aes <- if (model == "noGT") {
+    aes(x = association_condition, y = bj, group = method, colour = chain, order = chain)
+} else {
+    aes(x = association, y = bj, group = method, colour = chain, order = chain)
+}
+
+g <- ggplot(df_slabplot) +
+    plot_aes +
+    geom_dots(
+        position = position_dodge(),
+        # height = 2, dotsize = 0.5, stackratio = 1.1, scale = 1.5
+    ) +
+    labs(x = "Association", y = TeX("$\\beta_j$")) +
+    scale_fill_manual(
+        name = "Chain",
+        aesthetics = c("fill", "colour"),
+        values = setNames(
+            c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "grey80"),
+            c(1:4, "vb")
+        )
+    ) +
+    theme_bw() +
+    theme(
+        legend.position = "bottom",
+        axis.text.x = element_blank()
+    )
+ggsave(sprintf("%s/%s/diag/full-posteriors-dots.png", fpath, model), width = 20, height = 5)
+
+plot_aes <- if (model == "noGT") {
+    aes(x = association_condition, y = bj, colour = chain, fill = chain)
+} else {
+    aes(x = association, y = bj, colour = chain, fill = chain)
+}
+g <- ggplot(df_slabplot) +
+    plot_aes +
+    stat_slab(position = position_dodge(width = 0.75), slab_size = 0.3, fill = "grey90") +
+    labs(x = "Association", y = TeX("$\\beta_j$")) +
+    scale_fill_manual(
+        name = "Chain",
+        aesthetics = c("fill", "colour"),
+        values = setNames(
+            c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "grey50"),
+            c(1:4, "vb")
+        )
+    ) +
+    theme_bw() +
+    theme(
+        legend.position = "bottom",
+        axis.text.x = element_blank()
+    )
+ggsave(sprintf("%s/%s/diag/full-posteriors-slab.pdf", fpath, model), width = 20, height = 5)
 
 
-# fr_df <- readRDS(sprintf("rds/%s_discrepant_%s_fr.rds", model, tol_str))
-# # fr_df <- do.call(rbind, fr_df) 
-
-# cols <- c("mean", "khat", "time", "gene", "snp")
-# if (model == "noGT") cols <- c(cols, "condition")
-
-# dfn <- fr_df[, cols]
-# dfn[, c("mean", "khat", "time")] <- lapply(
-#     dfn[, c("mean", "khat", "time")],
-#     as.numeric
-# )
-# dfm <- merge(
-#     dfn, df,
-#     by = by,
-#     suffixes = c(".new", ".old")
-# )
-
-# dfm <- dfm %>% mutate(
-#     new_discrepancy = hmc - mean,
-#     discrepancy = discrepancy
-# )
-
-
-
-
-
-# if (model == "GT") {
-#     stop()
-# }
 
 
 top_newd <- dfm[order(-abs(dfm$new_discrepancy)), ]
@@ -450,29 +484,9 @@ retry_advi <- retry_advi[retry_advi$param != "lp__", ]
 # retry_hmc$param <- rownames(retry_hmc)
 retry_hmc <- retry_hmc[retry_hmc$param != "lp__", ]
 
-# g <- ggplot() +
-#     stat_halfeye(
-#         data = retry_advi,
-#         mapping = aes(
-#             xdist = dist_normal(mean, sd),
-#             y = "advi", colour = "advi", fill = "advi"
-#         )
-#     ) +
-#     stat_halfeye(
-#         data = retry_hmc,
-#         mapping = aes(
-#             xdist = dist_normal(mean, sd),
-#             y = "hmc", colour = "hmc", fill = "hmc"
-#         )
-#     ) +
-#     facet_wrap(~param, scales = "free_x")
-
-# ggsave("tmp.pdf")
-# system("convert tmp.pdf tmp.png")
-
-
 
 mysnp <- top_newd[1, "snp"]
+mysnp_clean <- make.names(mysnp)
 mygene <- top_newd[1, "gene"]
 mycondition <- top_newd[1, "condition"]
 
@@ -561,12 +575,12 @@ g1 <- ggplot(grid) +
 fname <- if (model == "GT") {
         sprintf(
             "%s/%s/diag/%s_%s_grid-beta1.pdf",
-            fpath, model, mygene, mysnp
+            fpath, model, mygene, mysnp_clean
         )
     } else {
         sprintf(
             "%s/%s/diag/%s_%s_%s_grid-beta1.pdf",
-            fpath, model, mygene, mysnp, mycondition
+            fpath, model, mygene, mysnp_clean, mycondition
         )
 }
 ggsave(fname, width = 5, height = 3)
@@ -625,12 +639,12 @@ g2 <- ggplot(grid) +
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_grid-beta2.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_grid-beta2.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 
@@ -688,12 +702,12 @@ g3 <- ggplot(grid) +
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_grid-beta1-beta2.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_grid-beta1-beta2.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 5, height = 3)
@@ -721,12 +735,12 @@ g_all <- plot_grid(
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_grid-all.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_grid-all.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 8, height = 4)
@@ -761,16 +775,9 @@ if (model == "noGT" & !file.exists("rds/noGT_worst_newmod.rds")) {
 
 if (model == "noGT") set.seed(35)
 
-fit_real_hmc <- if (model == "noGT") {
-    fit_mod("noGT", mygene, mysnp, mycondition)
-} else {
-    fit_mod("GT", mygene, mysnp)
-}
-fit_real_vb <- if (model == "noGT") {
-    fit_mod("noGT", mygene, mysnp, mycondition, method = "vb")
-} else {
-    fit_mod("GT", mygene, mysnp, method = "vb")
-}
+fit_real_hmc <- fit_mod(model, mygene, mysnp, mycondition)
+fit_real_vb <- fit_mod(model, mygene, mysnp, mycondition, method = "vb")
+
 summary(fit_real_hmc, pars = "bj")[[1]]
 summary(fit_real_vb, pars = "bj")[[1]]
 
@@ -785,46 +792,50 @@ g1 <- ggplot() +
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_method.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_method.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 2, height = 3)
 
-inter <- stan_model("src/stan/GT_nb_ase_refbias_inter.stan")
-intra <- stan_model("src/stan/GT_nb_ase_refbias_intra.stan")
-between <- fit_mod("GT", mygene, mysnp, stanmodel = inter)
-within <- fit_mod("GT", mygene, mysnp, stanmodel = intra)
+rbias <- if (model == "noGT") "" else "_refbias"
+
+inter <- stan_model(sprintf("src/stan/%s_nb_ase%s_inter.stan", model, rbias))
+intra <- stan_model(sprintf("src/stan/%s_nb_ase%s_intra.stan", model, rbias))
+between <- fit_mod(model, mygene, mysnp, condition = mycondition, stanmodel = inter)
+within <- fit_mod(model, mygene, mysnp, condition = mycondition, stanmodel = intra)
 
 dbetween <- extract(between)
 dwithin <- extract(within)
 
 g2 <- ggplot() +
-    stat_halfeye(aes(x = dbetween$bj, y = "Between\n(normal mixture prior)")) +
-    stat_halfeye(aes(x = dwithin$bj, y = "Within\n(normal mixture prior)")) +
+    stat_halfeye(aes(x = dbetween$bj, y = "Between\n(mixture prior)")) +
+    stat_halfeye(aes(x = dwithin$bj, y = "Within\n(mixture prior)")) +
     labs(x = TeX("$\\beta_j$"), y = "Model")
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_component.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_component.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 2, height = 3)
 
-inter_p <- stan_model("src/stan/GT_nb_ase_refbias_inter_prior.stan")
-intra_p <- stan_model("src/stan/GT_nb_ase_refbias_intra_prior.stan")
+set.seed(42)
 
-betweenp <- fit_mod("GT", mygene, mysnp, stanmodel = inter_p)
-withinp <- fit_mod("GT", mygene, mysnp, stanmodel = intra_p)
+inter_p <- stan_model(sprintf("src/stan/%s_nb_ase%s_inter_prior.stan", model, rbias))
+intra_p <- stan_model(sprintf("src/stan/%s_nb_ase%s_intra_prior.stan", model, rbias))
+
+betweenp <- fit_mod(model, mygene, mysnp, condition = mycondition, stanmodel = inter_p)
+withinp <- fit_mod(model, mygene, mysnp, condition = mycondition, stanmodel = intra_p)
 
 dbetweenp <- extract(betweenp)
 dwithinp <- extract(withinp)
@@ -836,12 +847,12 @@ g3 <- ggplot() +
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_component_prior.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_component_prior.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 2, height = 3)
@@ -852,89 +863,12 @@ p <- plot_grid(g1 + lims, g2 + lims, g3 + lims, ncol = 1, labels = "AUTO", align
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_method_comp_prior.pdf",
-        fpath, model, mygene, mysnp
+        fpath, model, mygene, mysnp_clean
     )
 } else {
     sprintf(
         "%s/%s/diag/%s_%s_%s_method_comp_prior.pdf",
-        fpath, model, mygene, mysnp, mycondition
+        fpath, model, mygene, mysnp_clean, mycondition
     )
 }
 ggsave(fname, width = 4, height = 5)
-
-# dfma <- merge(df_new, df, suffix = c("new", "old"))
-# dfma <- dfma[order(dfma$hmc), ]
-# dfma$ind <- 1:nrow(dfma)
-
-# g <- ggplot(dfma) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = vb_low,
-#             y = vb,
-#             ymax = vb_high,
-#             colour = "vb"
-#         ),
-#         position = position_nudge(x = 0.25)
-#     ) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = `5.0%`,
-#             y = mean,
-#             ymax = `95.0%`,
-#             colour = "vb_rerun"
-#         ),
-#         position = position_nudge(x = -0.25)
-#     ) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = hmc_low,
-#             y = hmc,
-#             ymax = hmc_high,
-#             colour = "hmc"
-#         )
-#     )
-# ggsave(sprintf("%s/%s/diag/discrepant_posteriors_out.png", fpath, model), width = 20, height = 7)
-
-
-# dfmma <- dfma[abs(dfma$discrepancy) != max(abs(dfma$discrepancy)), ]
-
-# g <- ggplot(dfmma) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = vb_low,
-#             y = vb,
-#             ymax = vb_high,
-#             colour = "vb"
-#         ),
-#         position = position_nudge(x = 0.25)
-#     ) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = `5.0%`,
-#             y = mean,
-#             ymax = `95.0%`,
-#             colour = "vb_rerun"
-#         ),
-#         position = position_nudge(x = -0.25)
-#     ) +
-#     geom_pointrange(
-#         aes(x = factor(ind),
-#             ymin = hmc_low,
-#             y = hmc,
-#             ymax = hmc_high,
-#             colour = "hmc"
-#         )
-#     )
-# ggsave(sprintf("%s/%s/diag/discrepant_posteriors.png", fpath, model), width = 20, height = 7)
-
-
-
-# df_lots <- lapply(1:5, function(j) {
-#     new_res <- parallel::mclapply(1:nrow(df), function(i) {
-#         fit_fun(df[i, "gene"], df[i, "snp"])
-#     }, mc.cores = 5)
-#     df_new <- do.call(rbind, new_res)
-#     dfm <- merge(df_new[, c("mean", "khat", "time", "gene", "snp")], df)
-#     dfm <- dfm %>% mutate(new_discrepancy = hmc - mean)
-#     dfm
-# })

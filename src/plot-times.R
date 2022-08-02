@@ -1,5 +1,6 @@
 library("argparse")
 library("ggplot2")
+library("cowplot")
 library("ggdist")
 library("ggpointdensity")
 library("baseqtl")
@@ -87,12 +88,14 @@ mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 cmdf <- mdf
 cmdf <- cmdf %>% mutate(
     discrepancy = mean.hmc - mean.vb,
+    relative_discrepancy = discrepancy / ((mean.hmc + mean.vb) / 2),
     hpd.width.95.vb = abs(`2.5%.vb` - `97.5%.vb`),
     hpd.width.95.hmc = abs(`2.5%.hmc` - `97.5%.hmc`),
     hpd.width.99.vb = abs(`0.5%.vb` - `99.5%.vb`),
     hpd.width.99.hmc = abs(`0.5%.hmc` - `99.5%.hmc`),
     discrepancy_95hpdi_width = hpd.width.95.hmc - hpd.width.95.vb,
-    discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb
+    discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb,
+    relative_discrepancy_99hpdi_width = discrepancy_99hpdi_width / ((hpd.width.99.hmc + hpd.width.99.vb) / 2)
 )
 cmdf <- cmdf[cmdf$discrepancy < 10, ]
 cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
@@ -166,11 +169,11 @@ diag_vars <- c(
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
 cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
-for (type in c("discrepancy", "discrepancy_99hpdi_width")) {
+for (type in c("relative_discrepancy", "discrepancy", "discrepancy_99hpdi_width", "relative_discrepancy_99hpdi_width")) {
 # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {    
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(size = 0.8, alpha = 0.6, aes(colour = top50))
+            geom_point(shape = 16, size = 0.8, alpha = 0.6, aes(colour = top50))
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
@@ -184,7 +187,7 @@ for (type in c("discrepancy", "discrepancy_99hpdi_width")) {
 
         ggsave(
             sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
-            width = 6.5, height = 3
+            width = 7, height = 3
         )
     }
 }
@@ -192,7 +195,7 @@ for (type in c("discrepancy", "discrepancy_99hpdi_width")) {
 # cmdf <- cmdf[cmdf$n_eff.hmc > 500, ]
 g <- ggplot(cmdf) +
     aes(n_eff.hmc, abs(discrepancy)) +
-    geom_point(size = 0.7, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
     geom_vline(xintercept = 500, linetype = "dashed") +
     labs(x = "Effective sample size", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
@@ -202,7 +205,7 @@ ggsave(
 
 g <- ggplot(cmdf) +
     aes(khat, abs(discrepancy)) +
-    geom_point(size = 0.7, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
     geom_vline(xintercept = 0.7, linetype = "dashed") +
     labs(x = expression(hat(K)), y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
@@ -211,7 +214,7 @@ ggsave(
 )
 g <- ggplot(cmdf) +
     aes(niter, abs(discrepancy)) +
-    geom_point(size = 0.7, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
     labs(x = "Number of iterations before convergence", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/disc_niter_vb.pdf", fpath, model),
@@ -220,7 +223,7 @@ ggsave(
 
 g <- ggplot(cmdf) +
     aes(time.hmc, abs(discrepancy)) +
-    geom_point() +
+    geom_point(shape = 16) +
     labs(x = "Time taken for HMC (s)", y = "Absolute discrepancy (ADVI - HMC)")
 ggsave(
     sprintf("%s/%s/diag/time_vb.pdf", fpath, model),
@@ -232,7 +235,7 @@ cmdf %>%
     summarise(time = sum(time.hmc), nsnps = n()) %>%
     ggplot() +
     aes(nsnps, time) +
-    geom_point() +
+    geom_point(shape = 16) +
     geom_smooth(method = "lm", formula = y ~ x) +
     scale_x_log10() +
     scale_y_log10() -> g
@@ -275,10 +278,70 @@ mdfs <- cmdf
 mdfs <- cmdf[abs(cmdf$mean.vb) < 2, ]
 lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
 
+seqr <- seq(lim[[1]], lim[[2]], length.out = 200)
+grid <- expand.grid(x = seqr, y = seqr)
+grid$absdiff <- sapply(1:nrow(grid), function(i) {
+    abs(grid[i, 1] - grid[i, 2])
+})
+grid$reldiff1 <- sapply(1:nrow(grid), function(i) {
+    abs((grid[i, 1] - grid[i, 2]) / ((grid[i, 1] + grid[i, 2]) / 2))
+})
+grid$reldiff2 <- sapply(1:nrow(grid), function(i) {
+    abs((grid[i, 1] - grid[i, 2]) / grid[i, 1])
+})
+ga <- ggplot(grid) +
+    aes(x = x, y = y, fill = absdiff) +
+    geom_tile() +
+    scale_fill_viridis(name = "Absolute difference") +
+    theme(legend.position = "bottom")
+gr1 <- ggplot(grid) +
+    aes(x = x, y = y, fill = reldiff1) +
+    geom_tile() +
+    scale_fill_viridis(name = "Relative (to mean) absolute difference") +
+    theme(legend.position = "bottom")
+gr2 <- ggplot(grid) +
+    aes(x = x, y = y, fill = reldiff2) +
+    geom_tile() +
+    scale_fill_viridis(name = "Relative (to x) absolute difference") +
+    theme(legend.position = "bottom")
+    
+pp <- cowplot::plot_grid(ga, gr1, gr2, nrow = 1, labels = "AUTO")
+ggsave(
+    sprintf("%s/%s/estimates/abs-rel-diff-comp.pdf", fpath, model),
+    width = 18, height = 6
+)
+
+
+
+pd1 <- ggplot(mdfs[order(abs(mdfs$discrepancy)), ]) +
+    aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale_colour_viridis(name = "Absolute difference") +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+pd2 <- ggplot(mdfs[order(abs(mdfs$relative_discrepancy)), ]) +
+    aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale_colour_viridis(name = "Relative absolute difference", trans="log10") +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+pp <- cowplot::plot_grid(pd1, pd2, labels = "AUTO")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-rel-abs-disc.pdf", fpath, model),
+    width = 12, height = 6
+)
+
+
 gp95 <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -289,10 +352,12 @@ ggsave(
     width = 5, height = 5
 )
 
+
+
 gp99 <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -329,7 +394,7 @@ mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
 gpd95 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -345,7 +410,7 @@ mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
 gpd99 <- ggplot(mdfss) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -432,7 +497,10 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-both-99.pdf", fpath, model),
     width = 6, height = 4
 )
-
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-both-99.eps", fpath, model),
+    width = 6, height = 4
+)
 
 
 ## by snp
@@ -466,7 +534,7 @@ for (t in c(99, 95)) {
             sum(cmdf$time.hmc[cmdf[[column]]]) + sum(cmdf$time.vb)
         }
     )
-    g <- ggplot() +
+    gtime <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
         geom_hline(
@@ -574,11 +642,18 @@ for (t in c(99, 95)) {
         sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
         width = 5, height = 5
     )
-    g <- g + ggtitle(NULL)
+    groc <- g + ggtitle(NULL)
     ggsave(
         sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
         width = 3.5, height = 4
     )
+
+    p <- plot_grid(groc, gtime, labels = "AUTO")
+    ggsave(
+        sprintf("%s/%s/time/time_roc_%s.pdf", fpath, model, t),
+        width = 7, height = 4
+    )
+
 
     # g <- ggplot() +
     #     aes(1 - spec_vb, sens_vb) +
@@ -597,7 +672,7 @@ for (t in c(99, 95)) {
 g <- ggplot(cmdf) +
     aes(time.hmc, time.vb) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_pointdensity(size = 0.8) +
+    geom_pointdensity(shape = 16, size = 0.8) +
     scale_x_log10() +
     scale_y_log10() +
     scale_colour_viridis() +

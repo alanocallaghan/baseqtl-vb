@@ -7,6 +7,7 @@ library("viridis")
 library("yardstick")
 library("dplyr")
 library("argparse")
+library("latex2exp")
 
 parser <- ArgumentParser()
 parser$add_argument( 
@@ -47,6 +48,7 @@ dir.create(fpath, showWarnings = FALSE, recursive = TRUE)
 
 top_df <- df[index, ]
 mysnp <- top_df$snp
+mysnp_clean <- make.names(mysnp)
 mygene <- top_df$gene
 mycondition <- top_df$condition
 
@@ -104,8 +106,8 @@ g <- ggplot(grid) +
         aes(colour = "VB")
     ) +
     scale_fill_viridis() +
-    labs(x = Tex("\\beta_j"), y = Tex("\\gamma_0"))
-ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta1.png", fpath, model, mygene, mysnp, mycondition))
+    labs(x = TeX("\\beta_j"), y = TeX("\\gamma_0"))
+ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta1.png", fpath, model, mygene, mysnp_clean, mycondition))
 
 
 
@@ -151,8 +153,8 @@ g <- ggplot(grid) +
         aes(colour = "VB")
     ) +
     scale_fill_viridis() +
-    labs(x = Tex("\\beta_j"), y = Tex("\\gamma_1"))
-ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta2.png", fpath, model, mygene, mysnp, mycondition))
+    labs(x = TeX("\\beta_j"), y = TeX("\\gamma_1"))
+ggsave(sprintf("%s/%s/diag/%s_%s_%s_grid-beta2.png", fpath, model, mygene, mysnp_clean, mycondition))
 
 
 

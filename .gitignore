@@ -11,3 +11,4 @@ pymc_samples/*
 src/stan/GT_nb_ase_refbias_inter_prior
 src/stan/GT_nb_ase_refbias_inter_prior
 src/stan/GT_nb_ase_refbias_intra_prior
+fig_*

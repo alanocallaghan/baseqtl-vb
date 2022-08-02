@@ -6,7 +6,7 @@
 
 # . ~/miniconda3/etc/profile.d/conda.sh
 # conda activate r-41
-module activate R/4.2.0-icelake
+# module activate R/4.2.0-icelake
 
 Rscript src/plot-log-prob.R -m GT -i 1
 Rscript src/plot-log-prob.R -m GT -i 2

@@ -157,14 +157,14 @@ fit_stan_GT <- function(
         return(post)
     }
     
-    tab <- summarise(post, method, vars, probs)
+    tab <- summarise_post(post, method, vars, probs)
     tab$gene <- gene
     tab$time <- time[["elapsed"]]
     tab$snp <- snp
     tab
 }
 
-summarise <- function(post, method, vars, probs) {
+summarise_post <- function(post, method, vars, probs) {
     if (method == "optimizing") {
         tab <- posterior::summarise_draws(
             post$theta_tilde,
@@ -253,7 +253,7 @@ fit_stan_noGT <- function(
             if (!summarise_posterior) {
                 return(post)
             }
-            tab <- summarise(post, method, vars, probs)
+            tab <- summarise_post(post, method, vars, probs)
             tab$gene <- gene
             tab$time <- time[["elapsed"]]
             tab$snp <- snp
@@ -261,6 +261,10 @@ fit_stan_noGT <- function(
             tab
         }
     )
+    names(out) <- names(gene_data)
+    if (!summarise_posterior) {
+        return(out)
+    }
     do.call(rbind, out)
 }
 

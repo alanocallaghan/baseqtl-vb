@@ -382,7 +382,7 @@ make_crosstab(
     xn = "HMC",
     yn = "ADVI",
     prop = TRUE,
-    caption = "Cross-tabulation of proportion of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes.",
+    caption = "Frequencies of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes.",
     label = "tab:nogt-xtab-prop-99",
     file = "table/noGT-xtab-prop-99.tex"
 )

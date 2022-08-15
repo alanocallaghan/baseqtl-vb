@@ -857,7 +857,11 @@ fname <- if (model == "GT") {
 }
 ggsave(fname, width = 2, height = 3)
 
-lims <- xlim(-1.2, 1.2)
+if (model == "GT") {
+    lims <- xlim(-1.2, 1.2)
+} else {
+    lims <- NULL
+}
 p <- plot_grid(g1 + lims, g2 + lims, g3 + lims, ncol = 1, labels = "AUTO", align = "v")
 
 fname <- if (model == "GT") {

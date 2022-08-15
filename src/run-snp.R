@@ -5,12 +5,14 @@ library("rstan")
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
+    # default = "noGT",
     type = "character"
 )
 parser$add_argument(
     "-i", "--inference",
-    default = "vb",
+    # default = "vb",
+    default = "pathfinder",
     type = "character"
 )
 parser$add_argument(
@@ -20,8 +22,8 @@ parser$add_argument(
 )
 parser$add_argument(
     "-g", "--gene",
-    default = "ENSG00000002330", ## nogt
-    # default = "ENSG00000025708", ## gt
+    # default = "ENSG00000002330", ## nogt
+    default = "ENSG00000025708", ## gt
     type = "character"
 )
 # parser$add_argument(
@@ -39,6 +41,7 @@ args <- parser$parse_args()
 
 
 source("src/functions.R")
+source("src/pathfinder.R")
 tol <- args[["tolerance"]]
 n_iterations <- args[["n_iterations"]]
 gene <- args[["gene"]]
@@ -53,7 +56,7 @@ mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
 
 fit_fun <- if (model == "GT") fit_stan_GT else fit_stan_noGT
 
-covariate <- get_covariates(model)
+covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 

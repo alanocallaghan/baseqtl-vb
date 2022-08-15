@@ -109,7 +109,7 @@ fit_stan_GT <- function(
         snp,
         covariates = get_covariates("GT"),
         init = "random",
-        method = c("vb", "sampling", "optimizing"),
+        method = c("vb", "sampling", "optimizing", "pathfinder", "pathfinder_parallel"),
         tol = 1e-2,
         vars = "bj",
         model = baseqtl:::stanmodels$GT_nb_ase_refbias,
@@ -165,9 +165,12 @@ fit_stan_GT <- function(
 }
 
 summarise_post <- function(post, method, vars, probs) {
-    if (method == "optimizing") {
+    if (method %in% c("optimizing", "pathfinder", "pathfinder_parallel")) {
+        if (method == "optimizing") {
+            post <- post$theta_tilde
+        }
         tab <- posterior::summarise_draws(
-            post$theta_tilde,
+            post,
             mean,
             sd,
             ~quantile(.x, probs = probs)
@@ -195,7 +198,7 @@ fit_stan_noGT <- function(
         snp,
         covariates = get_covariates("noGT"),
         init = "random",
-        method = c("vb", "sampling", "optimizing"),
+        method = c("vb", "sampling", "optimizing", "pathfinder", "pathfinder_parallel"),
         tol = 1e-2,
         vars = "bj",
         model = baseqtl:::stanmodels$noGT_nb_ase,
@@ -421,6 +424,7 @@ make_crosstab <- function(x, y, xn = "x", yn = "y", file = "", prop = FALSE, ...
     print(xt,
         include.rownames = FALSE,
         include.colnames = FALSE,
+        caption.placement = "top",
         hline.after = 2,
         file = file
     )

@@ -6,7 +6,7 @@ components = ["both", "inter", "intra"]
 tols = ["1e-02"]
 # tols = ["1e-02", "1e-03"]
 
-shell.prefix("module load R/4.0.3; ")
+shell.prefix("module load R/4.2.0-icelake; ")
 
 rule all:
     input:
@@ -81,6 +81,15 @@ rule process:
             gene = gt_dict.keys()
         ),
         expand(
+            "rds/GT/pathfinder/{gene}_done",
+            tol = tols,
+            gene = gt_dict.keys()
+        ),
+        expand(
+            "rds/GT/pathfinder_parallel/{gene}_done",
+            gene = gt_dict.keys()
+        ),
+        expand(
             "rds/noGT/sampling/{gene}_done",
             gene = nogt_dict.keys()
         ),
@@ -93,6 +102,8 @@ rule process:
         "rds/GT/sampling_combined.rds",
         "rds/GT/vb_1e-02_combined.rds",
         "rds/GT/vb_1e-03_combined.rds",
+        "rds/GT/pathfinder_combined.rds",
+        "rds/GT/pathfinder_parallel_combined.rds",
         "rds/tmp2.rds",
         "rds/noGT/sampling_combined.rds",
         "rds/noGT/vb_1e-02_combined.rds",
@@ -167,6 +178,28 @@ rule run_gt_vc:
             -i vb \
             -g "{wildcards.gene}" \
             -t {wildcards.tol}
+        """
+
+
+rule run_gt_p:
+    resources: runtime="05:00:00"
+    threads: 1
+    output:
+        "rds/GT/pathfinder/{gene}_done"
+    shell:
+        """
+        Rscript src/run-snp.R -m GT -i pathfinder -g "{wildcards.gene}"
+        """
+
+
+rule run_gt_pp:
+    resources: runtime="05:00:00"
+    threads: 4
+    output:
+        "rds/GT/pathfinder_parallel/{gene}_done"
+    shell:
+        """
+        Rscript src/run-snp.R -m GT -i pathfinder_parallel -g "{wildcards.gene}"
         """
 
 

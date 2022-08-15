@@ -445,3 +445,9 @@ expanded_range <- function(x, frac = 0.01, maxabs = NULL) {
 `%||%` <- function(a, b) {
     if (is.null(a)) b else a
 }
+
+mkfigdir <- function(fpath, model) {
+    sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc")), function(p) {
+        dir.create(p, showWarnings = FALSE, recursive = TRUE)
+    })
+}

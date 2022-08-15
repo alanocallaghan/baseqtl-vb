@@ -40,11 +40,166 @@ method <- args[["inference"]]
 tol_str <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
 fun <- match.fun(method)
 
-file <- sprintf("rds/%s_discrepancies_%s.rds", model, tol_str)
-df <- readRDS(file)
-
 fpath <- sprintf("fig_%1.0e", tol)
-dir.create(fpath, showWarnings = FALSE, recursive = TRUE)
+mkfigdir(fpath, model)
+
+
+infile <- sprintf("rds/%s_discrepancies_vb_%1.0e.rds", model, tol)
+# if (!file.exists(infile)) {
+
+maxRhat <- 1.1 ## from baseqtl-paper repo
+minEff <- 500 ## from stan docs (-ish)
+
+
+# "optimizing",
+methods <- c("vb", "sampling")
+dfs <- lapply(methods,
+    function(method) {
+        cat(method, "\n")
+        mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
+        combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
+        if (file.exists(combfile)) {
+            return(readRDS(combfile))
+        }
+    }
+)
+
+names(dfs) <- methods
+by <- if (model == "GT") {
+    c(
+        "test", "gene", "snp", "n_tot", "n_ase",
+        "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
+    )
+} else {
+    c(
+        "test", "gene", "snp", "condition",
+        "n_tot", "n_ase", "mean_ase", "sd_ase", "mean_count", "sd_count",
+        "n_wt", "n_het", "n_hom"
+    )
+}
+mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+
+cmdf <- mdf
+cmdf <- cmdf %>% mutate(
+    discrepancy = mean.hmc - mean.vb,
+    relative_discrepancy = discrepancy / ((mean.hmc + mean.vb) / 2),
+    hpd.width.95.vb = abs(`2.5%.vb` - `97.5%.vb`),
+    hpd.width.95.hmc = abs(`2.5%.hmc` - `97.5%.hmc`),
+    hpd.width.99.vb = abs(`0.5%.vb` - `99.5%.vb`),
+    hpd.width.99.hmc = abs(`0.5%.hmc` - `99.5%.hmc`),
+    discrepancy_95hpdi_width = hpd.width.95.hmc - hpd.width.95.vb,
+    discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb,
+    relative_discrepancy_99hpdi_width = discrepancy_99hpdi_width / ((hpd.width.99.hmc + hpd.width.99.vb) / 2)
+)
+cmdf <- cmdf[cmdf$discrepancy < 10, ]
+cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
+## from PSIS paper, arxiv 1507.02646
+# cmdf <- cmdf[cmdf$khat < 0.7, ]
+
+if (model == "GT") {
+    disc_df <- cmdf %>%
+        arrange(-abs(discrepancy)) %>%
+        top_n(50, abs(discrepancy)) %>%
+        select(
+            vb = mean.vb,
+            vb_low = `5.0%.vb`,
+            vb_high = `95.0%.vb`,
+            hmc = mean.hmc,
+            hmc_low = `5.0%.hmc`,
+            hmc_high = `95.0%.hmc`,
+            discrepancy = discrepancy,
+            snp,
+            gene
+        )
+} else {
+    disc_df <- cmdf %>%
+        arrange(-abs(discrepancy)) %>%
+        top_n(50, abs(discrepancy)) %>%
+        select(
+            vb = mean.vb,
+            vb_low = `5.0%.vb`,
+            vb_high = `95.0%.vb`,
+            hmc = mean.hmc,
+            hmc_low = `5.0%.hmc`,
+            hmc_high = `95.0%.hmc`,
+            discrepancy = discrepancy,
+            condition = condition,
+            snp = snp,
+            gene = gene
+        )
+
+}
+
+################################################################################
+## supplementary plots of discrepancy versus basic diagnostic vars
+################################################################################
+
+cmdf <- cmdf %>%
+    arrange(-abs(discrepancy))
+cmdf$top50 <- c(rep(TRUE, 50), rep(FALSE, nrow(cmdf) - 50))
+
+cmdf <- cmdf %>%
+    mutate(
+        disc_sc_sdh = discrepancy / sd.hmc,
+        disc_sc_sdv = discrepancy / sd.vb,
+        disc_sc_meanh = discrepancy / mean.hmc,
+        disc_sc_meanv = discrepancy / mean.vb
+    )
+
+mname <- "ADVI"
+method <- "vb"
+r <- range(c(cmdf$mean.hmc, cmdf$mean.vb))
+## not se mean but other hmc se
+diag_vars <- c(
+    "gene",
+    "Rhat",
+    "khat",
+    "converged",
+    "niter",
+    "n_eff.hmc", "time.hmc", "n_ase",
+    "se_mean.hmc", "sd.hmc",
+    "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
+)
+cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
+for (type in c("relative_discrepancy", "discrepancy", "discrepancy_99hpdi_width", "relative_discrepancy_99hpdi_width")) {
+# for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
+    for (x in diag_vars) {    
+        geom <- if (is.numeric(cmdf[[x]])) {
+            geom_point(shape = 16, size = 0.8, alpha = 0.6, aes(colour = top50))
+        } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
+            geom_boxplot(fill = "grey80")
+        }
+        g <- ggplot(arrange(cmdf, abs(discrepancy))) +
+            aes_string(x, sprintf("abs(%s)", type)) +
+            geom +
+            geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+            scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
+            scale_y_log10() +
+            labs(x = x, y = type)
+
+        ggsave(
+            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
+            width = 7, height = 3
+        )
+    }
+}
+# saveRDS(
+#     disc_df,
+#     infile
+# )
+
+# }
+
+df <- readRDS(infile)
+
+
+
+
+################################################################################
+## re-run the worst cases a bunch of times with different inits
+################################################################################
+
+
 # fpath <- "fig"
 n_replicates <- 20
 
@@ -55,8 +210,6 @@ rerun_files <- sprintf("rds/%s_discrepancy_%s_rerun_%s.rds", model, tol_str, ini
 
 fit_fun <- match.fun(paste("fit_stan", model, sep = "_"))
 set.seed(42)
-
-
 
 
 if (!all(file.exists(rerun_files))) {

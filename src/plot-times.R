@@ -32,11 +32,9 @@ tol <- args[["tolerance"]]
 model <- args[["model"]]
 
 fpath <- sprintf("fig_%1.0e", tol)
-sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc")), function(p) {
-    dir.create(p, showWarnings = FALSE, recursive = TRUE)
-})
 # fpath <- "fig"
 source("src/functions.R")
+mkfigdir(fpath, model)
 
 
 # "optimizing",
@@ -83,10 +81,9 @@ by <- if (model == "GT") {
         "n_wt", "n_het", "n_hom"
     )
 }
-mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+df_vb_hmc <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
-cmdf <- mdf
-cmdf <- cmdf %>% mutate(
+df_vb_hmc <- df_vb_hmc %>% mutate(
     discrepancy = mean.hmc - mean.vb,
     relative_discrepancy = discrepancy / ((mean.hmc + mean.vb) / 2),
     hpd.width.95.vb = abs(`2.5%.vb` - `97.5%.vb`),
@@ -97,13 +94,13 @@ cmdf <- cmdf %>% mutate(
     discrepancy_99hpdi_width = hpd.width.99.hmc - hpd.width.99.vb,
     relative_discrepancy_99hpdi_width = discrepancy_99hpdi_width / ((hpd.width.99.hmc + hpd.width.99.vb) / 2)
 )
-cmdf <- cmdf[cmdf$discrepancy < 10, ]
-cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
+df_vb_hmc <- df_vb_hmc[df_vb_hmc$discrepancy < 10, ]
+df_vb_hmc <- df_vb_hmc[df_vb_hmc$n_eff.hmc > minEff & df_vb_hmc$Rhat < maxRhat, ]
 ## from PSIS paper, arxiv 1507.02646
-# cmdf <- cmdf[cmdf$khat < 0.7, ]
+# df_vb_hmc <- df_vb_hmc[df_vb_hmc$khat < 0.7, ]
 
 if (model == "GT") {
-    disc_df <- cmdf %>%
+    disc_df <- df_vb_hmc %>%
         arrange(-abs(discrepancy)) %>%
         top_n(50, abs(discrepancy)) %>%
         select(
@@ -118,7 +115,7 @@ if (model == "GT") {
             gene
         )
 } else {
-    disc_df <- cmdf %>%
+    disc_df <- df_vb_hmc %>%
         arrange(-abs(discrepancy)) %>%
         top_n(50, abs(discrepancy)) %>%
         select(
@@ -142,119 +139,15 @@ saveRDS(
 )
 
 
-cmdf <- cmdf %>%
-    arrange(-abs(discrepancy))
-cmdf$top50 <- c(rep(TRUE, 50), rep(FALSE, nrow(cmdf) - 50))
-
-cmdf <- cmdf %>%
-    mutate(
-        disc_sc_sdh = discrepancy / sd.hmc,
-        disc_sc_sdv = discrepancy / sd.vb,
-        disc_sc_meanh = discrepancy / mean.hmc,
-        disc_sc_meanv = discrepancy / mean.vb
-    )
-
-mname <- "ADVI"
-method <- "vb"
-r <- range(c(cmdf$mean.hmc, cmdf$mean.vb))
-## not se mean but other hmc se
-diag_vars <- c(
-    "gene",
-    "Rhat",
-    "khat",
-    "converged",
-    "niter",
-    "n_eff.hmc", "time.hmc", "n_ase",
-    "se_mean.hmc", "sd.hmc",
-    "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
-)
-cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
-for (type in c("relative_discrepancy", "discrepancy", "discrepancy_99hpdi_width", "relative_discrepancy_99hpdi_width")) {
-# for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
-    for (x in diag_vars) {    
-        geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(shape = 16, size = 0.8, alpha = 0.6, aes(colour = top50))
-        } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
-            geom_boxplot(fill = "grey80")
-        }
-        g <- ggplot(arrange(cmdf, abs(discrepancy))) +
-            aes_string(x, sprintf("abs(%s)", type)) +
-            geom +
-            geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
-            scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
-            scale_y_log10() +
-            labs(x = x, y = type)
-
-        ggsave(
-            sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
-            width = 7, height = 3
-        )
-    }
-}
-
-# cmdf <- cmdf[cmdf$n_eff.hmc > 500, ]
-g <- ggplot(cmdf) +
-    aes(n_eff.hmc, abs(discrepancy)) +
-    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
-    geom_vline(xintercept = 500, linetype = "dashed") +
-    labs(x = "Effective sample size", y = "Absolute discrepancy (ADVI - HMC)")
-ggsave(
-    sprintf("%s/%s/diag/disc_ESS_vb.pdf", fpath, model),
-    width = 5, height = 5
-)
-
-g <- ggplot(cmdf) +
-    aes(khat, abs(discrepancy)) +
-    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
-    geom_vline(xintercept = 0.7, linetype = "dashed") +
-    labs(x = expression(hat(K)), y = "Absolute discrepancy (ADVI - HMC)")
-ggsave(
-    sprintf("%s/%s/diag/disc_khat_vb.pdf", fpath, model),
-    width = 5, height = 5
-)
-g <- ggplot(cmdf) +
-    aes(niter, abs(discrepancy)) +
-    geom_point(shape = 16, size = 0.7, alpha = 0.7) +
-    labs(x = "Number of iterations before convergence", y = "Absolute discrepancy (ADVI - HMC)")
-ggsave(
-    sprintf("%s/%s/diag/disc_niter_vb.pdf", fpath, model),
-    width = 5, height = 5
-)
-
-g <- ggplot(cmdf) +
-    aes(time.hmc, abs(discrepancy)) +
-    geom_point(shape = 16) +
-    labs(x = "Time taken for HMC (s)", y = "Absolute discrepancy (ADVI - HMC)")
-ggsave(
-    sprintf("%s/%s/diag/time_vb.pdf", fpath, model),
-    width = 7, height = 7
-)
-
-cmdf %>%
-    group_by(gene) %>%
-    summarise(time = sum(time.hmc), nsnps = n()) %>%
-    ggplot() +
-    aes(nsnps, time) +
-    geom_point(shape = 16) +
-    geom_smooth(method = "lm", formula = y ~ x) +
-    scale_x_log10() +
-    scale_y_log10() -> g
-ggsave(
-    sprintf("%s/%s/time/nsnp.pdf", fpath, model),
-    width = 5, height = 5
-)
-
-
-gdf <- group_by(cmdf, gene)
 
 lab_str <- "HMC: %s\nADVI: %s\n"
-cmdf$nullstr95 <- sprintf(lab_str,
-    ifelse(cmdf$null.95.hmc, "yes", "no"),
-    ifelse(cmdf$null.95.vb, "yes", "no")
+df_vb_hmc$nullstr95 <- sprintf(lab_str,
+    ifelse(df_vb_hmc$null.95.hmc, "yes", "no"),
+    ifelse(df_vb_hmc$null.95.vb, "yes", "no")
 )
-cmdf$nullstr99 <- sprintf(lab_str,
-    ifelse(cmdf$null.99.hmc, "yes", "no"),
-    ifelse(cmdf$null.99.vb, "yes", "no")
+df_vb_hmc$nullstr99 <- sprintf(lab_str,
+    ifelse(df_vb_hmc$null.99.hmc, "yes", "no"),
+    ifelse(df_vb_hmc$null.99.vb, "yes", "no")
 )
 
 null_levs <- sprintf(
@@ -270,75 +163,14 @@ scale <- scale_colour_manual(
     drop = TRUE,
     name = "Significance"
 )
-cmdf$nullstr95 <- factor(cmdf$nullstr95, levels = null_ord)
-cmdf$nullstr99 <- factor(cmdf$nullstr99, levels = null_ord)
+df_vb_hmc$nullstr95 <- factor(df_vb_hmc$nullstr95, levels = null_ord)
+df_vb_hmc$nullstr99 <- factor(df_vb_hmc$nullstr99, levels = null_ord)
 
 
-mdfs <- cmdf
-mdfs <- cmdf[abs(cmdf$mean.vb) < 2, ]
-lim <- range(c(mdfs$mean.hmc, mdfs$mean.vb))
+mdf_filtered_outliers <- df_vb_hmc[abs(df_vb_hmc$mean.vb) < 2, ]
+lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
 
-seqr <- seq(lim[[1]], lim[[2]], length.out = 200)
-grid <- expand.grid(x = seqr, y = seqr)
-grid$absdiff <- sapply(1:nrow(grid), function(i) {
-    abs(grid[i, 1] - grid[i, 2])
-})
-grid$reldiff1 <- sapply(1:nrow(grid), function(i) {
-    abs((grid[i, 1] - grid[i, 2]) / ((grid[i, 1] + grid[i, 2]) / 2))
-})
-grid$reldiff2 <- sapply(1:nrow(grid), function(i) {
-    abs((grid[i, 1] - grid[i, 2]) / grid[i, 1])
-})
-ga <- ggplot(grid) +
-    aes(x = x, y = y, fill = absdiff) +
-    geom_tile() +
-    scale_fill_viridis(name = "Absolute difference") +
-    theme(legend.position = "bottom")
-gr1 <- ggplot(grid) +
-    aes(x = x, y = y, fill = reldiff1) +
-    geom_tile() +
-    scale_fill_viridis(name = "Relative (to mean) absolute difference") +
-    theme(legend.position = "bottom")
-gr2 <- ggplot(grid) +
-    aes(x = x, y = y, fill = reldiff2) +
-    geom_tile() +
-    scale_fill_viridis(name = "Relative (to x) absolute difference") +
-    theme(legend.position = "bottom")
-    
-pp <- cowplot::plot_grid(ga, gr1, gr2, nrow = 1, labels = "AUTO")
-ggsave(
-    sprintf("%s/%s/estimates/abs-rel-diff-comp.pdf", fpath, model),
-    width = 18, height = 6
-)
-
-
-
-pd1 <- ggplot(mdfs[order(abs(mdfs$discrepancy)), ]) +
-    aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
-    lims(x = lim, y = lim) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    scale_colour_viridis(name = "Absolute difference") +
-    guides(colour = guide_legend(override.aes = list(size = 2))) +
-    theme(legend.position = "bottom")
-pd2 <- ggplot(mdfs[order(abs(mdfs$relative_discrepancy)), ]) +
-    aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
-    lims(x = lim, y = lim) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    scale_colour_viridis(name = "Relative absolute difference", trans="log10") +
-    guides(colour = guide_legend(override.aes = list(size = 2))) +
-    theme(legend.position = "bottom")
-pp <- cowplot::plot_grid(pd1, pd2, labels = "AUTO")
-ggsave(
-    sprintf("%s/%s/estimates/point-estimates-rel-abs-disc.pdf", fpath, model),
-    width = 12, height = 6
-)
-
-
-gp95 <- ggplot(mdfs[order(mdfs$nullstr95), ]) +
+gp95 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(shape = 16, size = 0.5, alpha = 0.7) +
@@ -352,9 +184,7 @@ ggsave(
     width = 5, height = 5
 )
 
-
-
-gp99 <- ggplot(mdfs[order(mdfs$nullstr99), ]) +
+gp99 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(shape = 16, size = 0.5, alpha = 0.7) +
@@ -368,8 +198,8 @@ ggsave(
     width = 5, height = 5
 )
 make_crosstab(
-    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
-    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
     xn = "HMC",
     yn = "ADVI",
     caption = "Confusion matrix of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes",
@@ -377,8 +207,8 @@ make_crosstab(
     file = "table/noGT-xtab-99.tex"
 )
 make_crosstab(
-    x = ifelse(mdfs$null.99.hmc, "Significant", "Null"),
-    y = ifelse(mdfs$null.99.vb, "Significant", "Null"),
+    x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+    y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
     xn = "HMC",
     yn = "ADVI",
     prop = TRUE,
@@ -389,9 +219,9 @@ make_crosstab(
 
 
 
-mdfss <- mdfs[!(mdfs$null.95.hmc == mdfs$null.95.vb), ]
+mdf_discordant <- mdf_filtered_outliers[!(mdf_filtered_outliers$null.95.hmc == mdf_filtered_outliers$null.95.vb), ]
 
-gpd95 <- ggplot(mdfss) +
+gpd95 <- ggplot(mdf_discordant) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(shape = 16, size = 0.5, alpha = 0.7) +
@@ -405,9 +235,9 @@ ggsave(
     width = 5, height = 5
 )
 
-mdfss <- mdfs[!(mdfs$null.99.hmc == mdfs$null.99.vb), ]
+mdf_discordant <- mdf_filtered_outliers[!(mdf_filtered_outliers$null.99.hmc == mdf_filtered_outliers$null.99.vb), ]
 
-gpd99 <- ggplot(mdfss) +
+gpd99 <- ggplot(mdf_discordant) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_point(shape = 16, size = 0.5, alpha = 0.7) +
@@ -421,51 +251,6 @@ ggsave(
     width = 5, height = 5
 )
 
-
-mdfss <- mdfss %>% mutate(
-    hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
-    hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
-    hpd_width_ratio = hpd_width_hmc / hpd_width_vb
-)
-
-limv <- range(c(
-    mdfss[["0.5%.hmc"]], mdfss[["99.5%.hmc"]],
-    mdfss[["0.5%.vb"]], mdfss[["99.5%.vb"]]
-))
-g <- ggplot(mdfss) +
-    geom_pointrange(
-        aes(
-            x = mean.hmc,
-            xmin = `0.5%.hmc`,
-            xmax = `99.5%.hmc`,
-            colour = nullstr99,
-            y = mean.vb
-        ),
-        alpha = 0.2,
-        fatten = 1,
-        pch = 16
-    ) +
-    geom_pointrange(
-        aes(
-            x = mean.hmc,
-            y = mean.vb,
-            ymin = `0.5%.vb`,
-            colour = nullstr99,
-            ymax = `99.5%.vb`
-        ),
-        alpha = 0.2,
-        fatten = 1,
-        pch = 16
-    ) +
-    lims(x = limv, y = limv) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    theme(legend.position = "below") +
-    # guides(colour = guide_legend(override.aes = list(size = 2))) +
-    scale
-ggsave(
-    sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
-    width = 4, height = 4
-)
 
 
 g <- plot_with_legend_below(
@@ -512,8 +297,8 @@ for (t in c(99, 95)) {
         function(x) {
             column <- sprintf("null.%s.vb", x)
             sens_vec(
-                truth = factor(cmdf[[bc]], levels = c(TRUE, FALSE)),
-                estimate = factor(cmdf[[column]], levels = c(TRUE, FALSE))
+                truth = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE)),
+                estimate = factor(df_vb_hmc[[column]], levels = c(TRUE, FALSE))
             )
         }
     )
@@ -522,8 +307,8 @@ for (t in c(99, 95)) {
         function(x) {
             column <- sprintf("null.%s.vb", x)
             spec_vec(
-                truth = factor(cmdf[[bc]], levels = c(TRUE, FALSE)),
-                estimate = factor(cmdf[[column]], levels = c(TRUE, FALSE))
+                truth = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE)),
+                estimate = factor(df_vb_hmc[[column]], levels = c(TRUE, FALSE))
             )
         }
     )
@@ -531,20 +316,20 @@ for (t in c(99, 95)) {
         levs,
         function(x) {
             column <- sprintf("null.%s.vb", x)
-            sum(cmdf$time.hmc[cmdf[[column]]]) + sum(cmdf$time.vb)
+            sum(df_vb_hmc$time.hmc[df_vb_hmc[[column]]]) + sum(df_vb_hmc$time.vb)
         }
     )
     gtime <- ggplot() +
         aes(sens_vb, time_vb) +
         geom_line() +
         geom_hline(
-            yintercept = sum(cmdf$time.hmc),
+            yintercept = sum(df_vb_hmc$time.hmc),
             linetype = "dashed"
         ) +
         annotate(
             geom = "text",
             x = 0.96,
-            y = sum(cmdf$time.hmc),
+            y = sum(df_vb_hmc$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
         ) +
@@ -553,9 +338,9 @@ for (t in c(99, 95)) {
         #     segment.color = "grey70"
         # ) +
         # scale_y_log10(
-        #     limits = c(1, max(sum(cmdf$time.hmc), time_vb))
+        #     limits = c(1, max(sum(df_vb_hmc$time.hmc), time_vb))
         # ) +
-        ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
+        ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb)) +
         labs(x = "Sensitivity", y = "Total time (s)")
         # +
         # ggtitle("Sensitivity vs total time for ADVI")
@@ -572,13 +357,13 @@ for (t in c(99, 95)) {
         aes(spec_vb, time_vb) +
         geom_line() +
         geom_hline(
-            yintercept = sum(cmdf$time.hmc),
+            yintercept = sum(df_vb_hmc$time.hmc),
             linetype = "dashed"
         ) +
         annotate(
             geom = "text",
             x = median(spec_vb),
-            y = sum(cmdf$time.hmc),
+            y = sum(df_vb_hmc$time.hmc),
             label = "Total time without screening", 
             vjust = -0.2,
         ) +
@@ -587,7 +372,7 @@ for (t in c(99, 95)) {
         #     segment.color = "grey70"
         # ) +
         labs(x = "Specificity", y = "Total time (s)") +
-        ylim(0, max(sum(cmdf$time.hmc), time_vb))
+        ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb))
         # +
         # ggtitle("Specificity vs total time for ADVI")
     ggsave(
@@ -595,12 +380,12 @@ for (t in c(99, 95)) {
         width = 5, height = 5
     )
     # if (t == 99) stop()
-    # min(time_vb[sens_vb == 1] / sum(cmdf$time.hmc))
+    # min(time_vb[sens_vb == 1] / sum(df_vb_hmc$time.hmc))
 
-    prob <- cmdf[["prob.vb"]] %||% cmdf[["prob"]]
+    prob <- df_vb_hmc[["prob.vb"]] %||% df_vb_hmc[["prob"]]
     pred_vb <- prediction(
         predictions = prob,
-        labels = factor(cmdf[[bc]], levels = c(TRUE, FALSE))
+        labels = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE))
     )
 
     perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
@@ -653,23 +438,16 @@ for (t in c(99, 95)) {
         sprintf("%s/%s/time/time_roc_%s.pdf", fpath, model, t),
         width = 7, height = 4
     )
-
-
-    # g <- ggplot() +
-    #     aes(1 - spec_vb, sens_vb) +
-    #     geom_line() +
-    #     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    #     labs(x = "1 - specificity", y = "Sensitivity") +
-    #     ggtitle("ADVI") +
-    #     lims(x = 0:1, y = 0:1)
-    # ggsave(
-    #     sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, t),
-    #     width = 5, height = 5
-    # )
 }
 
 
-g <- ggplot(cmdf) +
+################################################################################
+## Unused graphs
+################################################################################
+
+
+## time comparison
+g <- ggplot(df_vb_hmc) +
     aes(time.hmc, time.vb) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_pointdensity(shape = 16, size = 0.8) +
@@ -723,106 +501,112 @@ ggsave(
 )
 
 
+## comparing absolute and relative differences
+mdf_filtered_outliers <- df_vb_hmc[abs(df_vb_hmc$mean.vb) < 2, ]
+lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
+
+seqr <- seq(lim[[1]], lim[[2]], length.out = 200)
+grid <- expand.grid(x = seqr, y = seqr)
+grid$absdiff <- sapply(1:nrow(grid), function(i) {
+    abs(grid[i, 1] - grid[i, 2])
+})
+grid$reldiff1 <- sapply(1:nrow(grid), function(i) {
+    abs((grid[i, 1] - grid[i, 2]) / ((grid[i, 1] + grid[i, 2]) / 2))
+})
+grid$reldiff2 <- sapply(1:nrow(grid), function(i) {
+    abs((grid[i, 1] - grid[i, 2]) / grid[i, 1])
+})
+ga <- ggplot(grid) +
+    aes(x = x, y = y, fill = absdiff) +
+    geom_tile() +
+    scale_fill_viridis(name = "Absolute difference") +
+    theme(legend.position = "bottom")
+gr1 <- ggplot(grid) +
+    aes(x = x, y = y, fill = reldiff1) +
+    geom_tile() +
+    scale_fill_viridis(name = "Relative (to mean) absolute difference") +
+    theme(legend.position = "bottom")
+gr2 <- ggplot(grid) +
+    aes(x = x, y = y, fill = reldiff2) +
+    geom_tile() +
+    scale_fill_viridis(name = "Relative (to x) absolute difference") +
+    theme(legend.position = "bottom")
+    
+pp <- cowplot::plot_grid(ga, gr1, gr2, nrow = 1, labels = "AUTO")
+ggsave(
+    sprintf("%s/%s/estimates/abs-rel-diff-comp.pdf", fpath, model),
+    width = 18, height = 6
+)
+
+pd1 <- ggplot(mdf_filtered_outliers[order(abs(mdf_filtered_outliers$discrepancy)), ]) +
+    aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale_colour_viridis(name = "Absolute difference") +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+pd2 <- ggplot(mdf_filtered_outliers[order(abs(mdf_filtered_outliers$relative_discrepancy)), ]) +
+    aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
+    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    lims(x = lim, y = lim) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    scale_colour_viridis(name = "Relative absolute difference", trans="log10") +
+    guides(colour = guide_legend(override.aes = list(size = 2))) +
+    theme(legend.position = "bottom")
+pp <- cowplot::plot_grid(pd1, pd2, labels = "AUTO")
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-rel-abs-disc.pdf", fpath, model),
+    width = 12, height = 6
+)
 
 
+## point estimates with HPD shown
 
+mdf_discordant <- mdf_discordant %>% mutate(
+    hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
+    hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
+    hpd_width_ratio = hpd_width_hmc / hpd_width_vb
+)
 
-# gdf <- group_by(cmdf, gene)
+limv <- range(c(
+    mdf_discordant[["0.5%.hmc"]], mdf_discordant[["99.5%.hmc"]],
+    mdf_discordant[["0.5%.vb"]], mdf_discordant[["99.5%.vb"]]
+))
+g <- ggplot(mdf_discordant) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            xmin = `0.5%.hmc`,
+            xmax = `99.5%.hmc`,
+            colour = nullstr99,
+            y = mean.vb
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    geom_pointrange(
+        aes(
+            x = mean.hmc,
+            y = mean.vb,
+            ymin = `0.5%.vb`,
+            colour = nullstr99,
+            ymax = `99.5%.vb`
+        ),
+        alpha = 0.2,
+        fatten = 1,
+        pch = 16
+    ) +
+    lims(x = limv, y = limv) +
+    labs(x = "HMC estimate", y = "ADVI estimate") +
+    theme(legend.position = "below") +
+    # guides(colour = guide_legend(override.aes = list(size = 2))) +
+    scale
+ggsave(
+    sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
+    width = 4, height = 4
+)
 
-# ## by snp
-# for (t in c(99, 95)) {
-#     bc <- paste0("null.", t, ".hmc")
-#     levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
-#     sens_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gdf %>%
-#                 summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
-#                 sens(
-#                     ## TRUE means that the HPD interval is one side of zero (sig)
-#                     ## FALSE means it overlaps zero (null)
-#                     truth = factor(t, levels = c(TRUE, FALSE)),
-#                     estimate = factor(e, levels = c(TRUE, FALSE))
-#                 ) %>%
-#                 pull(.estimate)
-#         }
-#     )
-#     spec_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gdf %>%
-#                 summarise(t = any(.data[[bc]]), e = any(.data[[column]])) %>%
-#                 spec(
-#                     ## TRUE means that the HPD interval is one side of zero (sig)
-#                     ## FALSE means it overlaps zero (null)
-#                     truth = factor(t, levels = c(TRUE, FALSE)),
-#                     estimate = factor(e, levels = c(TRUE, FALSE))
-#                 ) %>%
-#                 pull(.estimate)
-#         }
-#     )
-#     time_vb <- sapply(
-#         levs,
-#         function(x) {
-#             column <- sprintf("null.%s.vb", x)
-#             gd <- gdf %>%
-#                 summarise(e = any(.data[[column]]))
-#             sum(cmdf$time.hmc[cmdf$gene %in% gd$gene[gd$e]]) + sum(cmdf$time.vb)
-#         }
-#     )
-#     g <- ggplot() +
-#         aes(sens_vb, time_vb) +
-#         geom_line() +
-#         geom_texthline(
-#             yintercept = sum(cmdf$time.hmc),
-#             label = "Total time without screening", 
-#             vjust = -0.2,
-#             linetype = "dashed"
-#         ) +
-#         geom_text_repel(
-#             aes(label = levs), vjust = 1, hjust = 1,
-#             segment.color = "grey70"
-#         ) +
-#         labs(x = "Sensitivity", y = "Total time (s)") +
-#         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-#         ggtitle("Sensitivity vs total time for ADVI")
-#     ggsave(
-#         sprintf("%s/%s/time/time_vs_sens_gene_vb_%s.pdf", fpath, model, t),
-#         width = 5, height = 5
-#     )
-
-#     g <- ggplot() +
-#         aes(spec_vb, time_vb) +
-#         geom_line() +
-#         geom_texthline(
-#             yintercept = sum(cmdf$time.hmc),
-#             label = "Total time without screening", 
-#             vjust = -0.2,
-#             linetype = "dashed"
-#         ) +
-#         geom_text_repel(
-#             aes(label = levs), vjust = 1, hjust = 1,
-#             segment.color = "grey70"
-#         ) +
-#         labs(x = "Specificity", y = "Total time (s)") +
-#         ylim(0, max(sum(cmdf$time.hmc), time_vb)) +
-#         ggtitle("Specificity vs total time for ADVI")
-#     ggsave(
-#         sprintf("%s/%s/time/time_vs_spec_gene_vb_%s.pdf", fpath, model, t),
-#         width = 5, height = 5
-#     )
-
-#     g <- ggplot() +
-#         aes(1 - spec_vb, sens_vb) +
-#         geom_line() +
-#         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-#         labs(x = "1 - specificity", y = "Sensitivity") +
-#         ggtitle("ADVI") +
-#         lims(x = 0:1, y = 0:1)
-#     ggsave(
-#         sprintf("%s/%s/roc/roc_vb_gene_%s.pdf", fpath, model, t),
-#         width = 5, height = 5
-#     )
-# }

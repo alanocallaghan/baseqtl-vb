@@ -5,8 +5,10 @@ nogt_dict = json.load(open("noGT_dict.json"))
 components = ["both", "inter", "intra"]
 tols = ["1e-02"]
 # tols = ["1e-02", "1e-03"]
+gt_in_dir = "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT/"
+nogt_in_dir = "/home/abo27/rds/rds-mrc-bsu/ev250/psoriasis/refbias/Btrecase/SpikePrior/fisher001/rna/"
 
-shell.prefix("module load R/4.2.0-icelake; ")
+shell.prefix(". /etc/profile.d/modules.sh; module load R/4.2.0-icelake; ")
 
 rule all:
     input:
@@ -152,8 +154,10 @@ rule process_components:
         """
 
 
+
 rule run_gt_sc:
-    input: "dicts/{gene}.json"
+    input:
+        gt_in_dir + "/rbias.{gene}.GT.stan1.input.rds"
     threads: 4
     resources: runtime="05:00:00"
     output:
@@ -164,11 +168,15 @@ rule run_gt_sc:
         Rscript src/run-snp-sep.R \
             -m GT \
             -i sampling \
-            -g "{wildcards.gene}"
+            -g "{wildcards.gene}" \
+            -c 1
         """
 
 rule run_gt_vc:
     resources: runtime="05:00:00"
+    threads: 8
+    input:
+        gt_in_dir + "/rbias.{gene}.GT.stan1.input.rds"
     output:
         "rds/GT/components/vb_{tol}/{gene}_done"
     shell:
@@ -177,44 +185,54 @@ rule run_gt_vc:
             -m GT \
             -i vb \
             -g "{wildcards.gene}" \
-            -t {wildcards.tol}
+            -t {wildcards.tol} \
+            -c {threads}
         """
 
 
 rule run_gt_p:
-    resources: runtime="05:00:00"
-    threads: 1
+    resources: runtime="05:00:00", mem_mb=10000
+    threads: 8
+    input:
+        gt_in_dir + "rbias.{gene}.GT.stan1.input.rds"
     output:
         "rds/GT/pathfinder/{gene}_done"
     shell:
         """
-        Rscript src/run-snp.R -m GT -i pathfinder -g "{wildcards.gene}"
+        Rscript src/run-snp.R -m GT -i pathfinder -g "{wildcards.gene}" -c {threads}
         """
 
 
 rule run_gt_pp:
     resources: runtime="05:00:00"
     threads: 4
+    input:
+        gt_in_dir + "rbias.{gene}.GT.stan1.input.rds"
     output:
         "rds/GT/pathfinder_parallel/{gene}_done"
     shell:
         """
-        Rscript src/run-snp.R -m GT -i pathfinder_parallel -g "{wildcards.gene}"
+        Rscript src/run-snp.R -m GT -i pathfinder_parallel -g "{wildcards.gene}" -c 1
         """
 
 
 rule run_gt_s:
     resources: runtime="05:00:00"
     threads: 4
+    input:
+        gt_in_dir + "rbias.{gene}.GT.stan1.input.rds"
     output:
         "rds/GT/sampling/{gene}_done"
     shell:
         """
-        Rscript src/run-snp.R -m GT -i sampling -g "{wildcards.gene}"
+        Rscript src/run-snp.R -m GT -i sampling -g "{wildcards.gene}" -c 1
         """
 
 rule run_gt_v:
     resources: runtime="05:00:00"
+    threads: 8
+    input:
+        gt_in_dir + "rbias.{gene}.GT.stan1.input.rds"
     output:
         # "rds/GT/vb_{tol}/{gene}_{snp}.rds"
         "rds/GT/vb_{tol}/{gene}_done"
@@ -230,6 +248,9 @@ rule run_gt_v:
 rule run_nogt_s:
     resources: runtime="05:00:00"
     threads: 4
+    input:
+        normal = nogt_in_dir + "refbias.{gene}.normal_skin.noGT.stan.input.rds",
+        Psoriasis = nogt_in_dir + "refbias.{gene}.Psoriasis_skin.noGT.stan.input.rds"
     output:
         "rds/noGT/sampling/{gene}_done"
         # "rds/noGT/sampling/{gene}_{snp}_normal_skin.rds",
@@ -239,11 +260,16 @@ rule run_nogt_s:
         Rscript src/run-snp.R \
             -m noGT \
             -i sampling \
-            -g "{wildcards.gene}"
+            -g "{wildcards.gene}" \
+            -c 1
         """ 
 
 rule run_nogt_v:
     resources: runtime="05:00:00"
+    threads: 8
+    input:
+        normal = nogt_in_dir + "refbias.{gene}.normal_skin.noGT.stan.input.rds",
+        Psoriasis = nogt_in_dir + "refbias.{gene}.Psoriasis_skin.noGT.stan.input.rds"
     output:
         "rds/noGT/vb_{tol}/{gene}_done"
         # "rds/noGT/vb_{tol}/{gene}_{snp}_normal_skin.rds",
@@ -254,12 +280,14 @@ rule run_nogt_v:
             -m noGT \
             -i vb \
             -g "{wildcards.gene}" \
-            -t {wildcards.tol}
+            -t {wildcards.tol} \
+            -c {threads}
         """
 
 
 rule run_lm:
     resources: runtime="01:00:00"
+    threads: 8
     output:
         "rds/GT/lm-filtering.rds"
     shell:

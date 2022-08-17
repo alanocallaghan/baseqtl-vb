@@ -54,7 +54,7 @@ lms <- lapply(seq_along(genes),
             }
         )
         do.call(rbind, mods)
-    }
+    }, mc.cores = 8
 )
 df <- do.call(rbind, lms)
 df$padj <- NA

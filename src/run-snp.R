@@ -18,7 +18,12 @@ parser$add_argument(
 parser$add_argument(
     "-n", "--n_iterations",
     default = 50000,
-    type = "double"
+    type = "integer"
+)
+parser$add_argument(
+    "-c", "--cores",
+    default = 50000,
+    type = "integer"
 )
 parser$add_argument(
     "-g", "--gene",
@@ -60,8 +65,9 @@ covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
-tmp <- lapply(snps,
+tmp <- parallel::mclapply(snps,
     function(snp) {
+        # cat("Running", snp, "\n")
         if (model == "GT") {
             file <- sprintf("rds/GT/%s/%s_%s.rds", mtol, gene, snp)
         } else {
@@ -77,7 +83,7 @@ tmp <- lapply(snps,
             tol = tol
         )
         saveRDS(tab, file)
-    }
+    }, mc.cores = args[["cores"]]
 )
 
 print(sprintf("rds/%s/%s/%s_done", model, mtol, gene))

@@ -11,8 +11,8 @@ parser$add_argument(
 )
 parser$add_argument(
     "-i", "--inference",
-    # default = "vb",
-    default = "pathfinder",
+    default = "vb",
+    # default = "pathfinder",
     type = "character"
 )
 parser$add_argument(
@@ -21,8 +21,13 @@ parser$add_argument(
     type = "integer"
 )
 parser$add_argument(
+    "-s", "--seed",
+    default = 42,
+    type = "integer"
+)
+parser$add_argument(
     "-c", "--cores",
-    default = 50000,
+    default = 1,
     type = "integer"
 )
 parser$add_argument(
@@ -48,6 +53,7 @@ args <- parser$parse_args()
 source("src/functions.R")
 source("src/pathfinder.R")
 tol <- args[["tolerance"]]
+seed <- args[["seed"]]
 n_iterations <- args[["n_iterations"]]
 gene <- args[["gene"]]
 method <- args[["inference"]]
@@ -55,7 +61,7 @@ model <- args[["model"]]
 fun <- match.fun(method)
 
 
-mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
+mtol <- sprintf("%s_%1.0e", method, tol)
 
 # mtol <- method
 
@@ -65,27 +71,26 @@ covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
-tmp <- parallel::mclapply(snps,
+# tmp <- parallel::mclapply(snps,
+res <- lapply(snps,
     function(snp) {
-        # cat("Running", snp, "\n")
-        if (model == "GT") {
-            file <- sprintf("rds/GT/%s/%s_%s.rds", mtol, gene, snp)
-        } else {
-            file <- sprintf("rds/noGT/%s/%s_%s.rds", mtol, gene, snp)
-        }
-        if (file.exists(file)) return()
+        cat("Running", snp, "\n")
         tab <- fit_fun(
             gene_data = gene_data,
             gene = gene,
             snp = snp,
             covariates = covariates,
             method = method,
+            seed = seed,
             tol = tol
         )
-        saveRDS(tab, file)
-    }, mc.cores = args[["cores"]]
+        tab <- as.data.frame(tab)
+        tab$seed <- seed
+        tab
+    }
+    # }, mc.cores = args[["cores"]]
 )
 
-print(sprintf("rds/%s/%s/%s_done", model, mtol, gene))
-file.create(sprintf("rds/%s/%s/%s_done", model, mtol, gene))
+print(sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed))
+saveRDS(res, sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed))
 cat("Done!\n")

@@ -1,6 +1,7 @@
 library("rstan")
 library("ggplot2")
 library("ggdist")
+library("ggrastr")
 library("distributional")
 library("ggpointdensity")
 library("baseqtl")
@@ -67,14 +68,14 @@ dfs <- lapply(methods,
 names(dfs) <- methods
 by <- if (model == "GT") {
     c(
-        "test", "gene", "snp", "n_tot", "n_ase",
+        "test", "gene", "snp", "n_tot", "n_ase", "p_het", "n_tot",
         "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
     )
 } else {
     c(
         "test", "gene", "snp", "condition",
         "n_tot", "n_ase", "mean_ase", "sd_ase", "mean_count", "sd_count",
-        "n_wt", "n_het", "n_hom"
+        "n_wt", "n_het", "n_hom", "p_het", "n_tot"
     )
 }
 mdf <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
@@ -158,6 +159,8 @@ diag_vars <- c(
     "niter",
     "n_eff.hmc", "time.hmc", "n_ase",
     "se_mean.hmc", "sd.hmc",
+    "n_tot",
+    "p_het",
     "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
 )
 cmdf$converged <- factor(ifelse(as.logical(cmdf$converged), TRUE, FALSE))
@@ -175,7 +178,7 @@ for (type in c("relative_discrepancy", "discrepancy", "discrepancy_99hpdi_width"
             geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
             scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
             scale_y_log10() +
-            labs(x = x, y = type)
+            labs(x = diagname(x), y = type)
 
         ggsave(
             sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
@@ -371,6 +374,7 @@ if (!all(file.exists(rerun_files))) {
     rerun_df <- do.call(rbind, rerun_hmc)
     saveRDS(rerun_df, sprintf("rds/%s_rerun_discrepant_full.rds", model))
 }
+
 
 dfs <- lapply(rerun_files, readRDS)
 df_all <- do.call(rbind, dfs)
@@ -577,7 +581,7 @@ g <- ggplot(df_slabplot) +
         position = position_dodge(),
         # height = 2, dotsize = 0.5, stackratio = 1.1, scale = 1.5
     ) +
-    labs(x = "Association", y = TeX("$\\beta_j$")) +
+    labs(x = "Association", y = TeX("$\\beta_{aFC}$")) +
     scale_fill_manual(
         name = "Chain",
         aesthetics = c("fill", "colour"),
@@ -601,7 +605,7 @@ plot_aes <- if (model == "noGT") {
 g <- ggplot(df_slabplot) +
     plot_aes +
     stat_slab(position = position_dodge(width = 0.75), slab_size = 0.3, fill = "grey90") +
-    labs(x = "Association", y = TeX("$\\beta_j$")) +
+    labs(x = "Association", y = TeX("$\\beta_{aFC}$")) +
     scale_fill_manual(
         name = "Chain",
         aesthetics = c("fill", "colour"),
@@ -723,7 +727,8 @@ g1 <- ggplot(grid) +
     ) +
     scale_fill_viridis() +
     scale_colour_brewer(palette = "Set1", name = "Point estimate") +
-    labs(x = TeX("$\\beta_j$"), y = TeX("$\\gamma_0$"))
+    labs(x = TeX("$\\beta_{aFC}$"), y = TeX("$\\gamma_0$"))
+gt1 <- rasterise(g1, dpi = 300)
 
 fname <- if (model == "GT") {
         sprintf(
@@ -737,6 +742,7 @@ fname <- if (model == "GT") {
         )
 }
 ggsave(fname, width = 5, height = 3)
+
 
 # ggsave("tmp2.pdf")
 # system("convert tmp2.pdf tmp2.png")
@@ -787,7 +793,8 @@ g2 <- ggplot(grid) +
     ) +
     scale_fill_viridis() +
     scale_colour_brewer(palette = "Set1", name = "Point estimate") +
-    labs(x = TeX("$\\beta_j$"), y = TeX("$\\gamma_1$"))
+    labs(x = TeX("$\\beta_{aFC}$"), y = TeX("$\\gamma_1$"))
+gt2 <- rasterise(g2, dpi = 300)
 
 fname <- if (model == "GT") {
     sprintf(
@@ -850,6 +857,7 @@ g3 <- ggplot(grid) +
     scale_fill_viridis() +
     scale_colour_brewer(palette = "Set1", name = "Point estimate") +
     labs(x = TeX("$\\gamma_0$"), y = TeX("$\\gamma_1$"))
+gt3 <- rasterise(g3, dpi = 300)
 
 
 fname <- if (model == "GT") {
@@ -863,24 +871,35 @@ fname <- if (model == "GT") {
         fpath, model, mygene, mysnp_clean, mycondition
     )
 }
-ggsave(fname, width = 5, height = 3)
+ggsave(file = fname, width = 5, height = 3)
+
+
 
 legend <- get_legend(
     g1 + 
-        scale_fill_viridis(limits = lpr, name = "Log posterior density") +
+        scale_fill_viridis(
+            limits = lpr, name = "Log posterior density",
+            guide = guide_colourbar(
+                label.hjust = 1,
+                label.theme = element_text(angle = 45, size = 10)
+            )
+        ) +
         guides(color = guide_legend(nrow = 1)) +
         theme(
-            legend.position = "bottom",
-            legend.text = element_text(hjust = 1, angle = 45)
+            legend.position = "bottom"
+            # , legend.text = element_text(hjust = 1, angle = 45)
         )
 )
 
 t <- list(
     theme(legend.position = "none"),
-    scale_fill_viridis(limits = lpr, name = "Log posterior density")
+    scale_fill_viridis(
+        limits = lpr, name = "Log posterior density"
+    )
 )
+labels <- if (model == "GT") c(LETTERS[1:3]) else LETTERS[4:6]
 g_all <- plot_grid(
-    plot_grid(g1 + t, g2 + t, g3 + t, labels = "AUTO", nrow = 1),
+    plot_grid(g1 + t, g2 + t, g3 + t, labels = labels, nrow = 1),
     legend,
     rel_heights = c(0.85, 0.15),
     nrow = 2
@@ -898,6 +917,32 @@ fname <- if (model == "GT") {
 }
 ggsave(fname, width = 8, height = 4)
 
+t <- list(
+    theme(legend.position = "none"),
+    scale_fill_viridis(
+        limits = lpr, name = "Log posterior density"
+    )
+)
+labels <- if (model == "GT") c(LETTERS[1:3]) else LETTERS[4:6]
+g_all <- plot_grid(
+    plot_grid(gt1 + t, gt2 + t, gt3 + t, labels = labels, nrow = 1),
+    legend,
+    rel_heights = c(0.85, 0.15),
+    nrow = 2
+)
+fname <- if (model == "GT") {
+    sprintf(
+        "%s/%s/diag/%s_%s_grid-all-rast.pdf",
+        fpath, model, mygene, mysnp_clean
+    )
+} else {
+    sprintf(
+        "%s/%s/diag/%s_%s_%s_grid-all-rast.pdf",
+        fpath, model, mygene, mysnp_clean, mycondition
+    )
+}
+ggsave(fname, width = 8, height = 4)
+stop()
 
 
 if (model == "noGT" & !file.exists("rds/noGT_worst_newmod.rds")) {
@@ -941,7 +986,7 @@ dvb <- extract(fit_real_vb)
 g1 <- ggplot() +
     stat_halfeye(aes(x = dhmc$bj, y = "HMC")) +
     stat_halfeye(aes(x = dvb$bj, y = "VB")) +
-    labs(x = TeX("$\\beta_j$"), y = "Inference\nmethod")
+    labs(x = TeX("$\\beta_{aFC}$"), y = "Inference\nmethod")
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_method.pdf",
@@ -968,7 +1013,7 @@ dwithin <- extract(within)
 g2 <- ggplot() +
     stat_halfeye(aes(x = dbetween$bj, y = "Between\n(mixture prior)")) +
     stat_halfeye(aes(x = dwithin$bj, y = "Within\n(mixture prior)")) +
-    labs(x = TeX("$\\beta_j$"), y = "Model")
+    labs(x = TeX("$\\beta_{aFC}$"), y = "Model")
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_component.pdf",
@@ -996,7 +1041,7 @@ dwithinp <- extract(withinp)
 g3 <- ggplot() +
     stat_halfeye(aes(x = dbetweenp$bj, y = "Between\n(normal prior)")) +
     stat_halfeye(aes(x = dwithinp$bj, y = "Within\n(normal prior)")) +
-    labs(x = TeX("$\\beta_j$"), y = "Model")
+    labs(x = TeX("$\\beta_{aFC}$"), y = "Model")
 fname <- if (model == "GT") {
     sprintf(
         "%s/%s/diag/%s_%s_component_prior.pdf",

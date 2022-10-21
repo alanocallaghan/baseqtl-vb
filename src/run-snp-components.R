@@ -50,7 +50,7 @@ gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
 
-tmp <- lapply(snps,
+res <- lapply(snps,
     function(snp) {
         file <- sprintf("rds/%s/components/%s/%s_%s.rds", model, mtol, gene, snp)
         # if (file.exists(file)) return()
@@ -69,7 +69,6 @@ tmp <- lapply(snps,
             )
         }
         tab <- do.call(rbind, tabs)
-
         dir.create(
             sprintf("rds/%s/components/%s/", model, mtol),
             showWarnings = FALSE,
@@ -78,5 +77,7 @@ tmp <- lapply(snps,
         # saveRDS(tab, file)
     }
 )
-file.create(sprintf("rds/%s/components/%s/%s_done", model, mtol, gene))
+file <- sprintf("rds/%s/components/%s/%s.rds", model, mtol, gene)
+cat(file, "\n")
+saveRDS(res, sprintf("rds/%s/components/%s/%s_done", model, mtol, gene))
 cat("Done!\n")

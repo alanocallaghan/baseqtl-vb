@@ -11,7 +11,7 @@ genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
 ls_mat <- readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/scaled_gc_libsize.rds")
 
-lms <- lapply(seq_along(genes),
+lms <- parallel::mclapply(seq_along(genes),
     function(i) {
         cat(i, "/", length(genes), "genes, \n")
         gene <- genes[[i]]
@@ -38,7 +38,7 @@ lms <- lapply(seq_along(genes),
                 m2 <- cbind(
                     as.data.frame(
                         summary(
-                            glm(out$Y ~ abs(out$g) + out$cov[, -(1:2)], family = poisson(link="log"))
+                            MASS::glm.nb(out$Y ~ abs(out$g) + out$cov[, -(1:2)], link="log")
                         )$coef
                     )[2, ],
                     method = "glm",

@@ -38,7 +38,13 @@ mkfigdir(fpath, model)
 
 
 # "optimizing",
-methods <- c("vb", "sampling")
+# methods <- c("vb", "sampling", "pathfinder")
+# methods <- c("vb", "sampling")
+if (model == "GT") {
+    methods <- c("vb", "sampling", "pathfinder", "pathfinder_parallel")
+} else {
+    methods <- c("vb", "sampling")
+}
 dfs <- lapply(methods,
     function(method) {
         cat(method, "\n")
@@ -71,17 +77,24 @@ dfs[] <- lapply(dfs,
 names(dfs) <- methods
 by <- if (model == "GT") {
     c(
-        "test", "gene", "snp", "n_tot", "n_ase",
+        "test", "gene", "snp", "n_tot", "n_ase", "p_het", "n_tot",
         "mean_count", "sd_count", "n_wt", "n_het", "n_hom"
     )
 } else {
     c(
         "test", "gene", "snp", "condition",
         "n_tot", "n_ase", "mean_ase", "sd_ase", "mean_count", "sd_count",
-        "n_wt", "n_het", "n_hom"
+        "n_wt", "n_het", "n_hom", "p_het", "n_tot"
     )
 }
+dfs[["vb"]] <- dfs[["vb"]][dfs[["vb"]]$seed == "42", ]
 df_vb_hmc <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+
+if (model == "GT") {
+    df_pf_hmc <- merge(dfs[["pathfinder"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+    dfs[["pathfinder_parallel"]] <- dfs[["pathfinder_parallel"]][, !duplicated(colnames(dfs[["pathfinder_parallel"]]))]
+    df_pfp_hmc <- merge(dfs[["pathfinder_parallel"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
+}
 
 df_vb_hmc <- df_vb_hmc %>% mutate(
     discrepancy = mean.hmc - mean.vb,
@@ -169,11 +182,12 @@ df_vb_hmc$nullstr99 <- factor(df_vb_hmc$nullstr99, levels = null_ord)
 
 mdf_filtered_outliers <- df_vb_hmc[abs(df_vb_hmc$mean.vb) < 2, ]
 lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
+modname <- if (model == "GT") "with known genotypes" else "with unknown genotypes"
 
 gp95 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr95), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -187,7 +201,7 @@ ggsave(
 gp99 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr99), ]) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -202,9 +216,9 @@ make_crosstab(
     y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
     xn = "HMC",
     yn = "ADVI",
-    caption = "Confusion matrix of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes",
-    label = "tab:nogt-xtab-99",
-    file = "table/noGT-xtab-99.tex"
+    caption = sprintf("Confusion matrix of HMC and ADVI significance calls at 99\\%% threshold for BaseQTL %s", modname),
+    label = sprintf("tab:%s-xtab-99", model),
+    file = sprintf("table/%s-xtab-99.tex", model)
 )
 make_crosstab(
     x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
@@ -212,9 +226,9 @@ make_crosstab(
     xn = "HMC",
     yn = "ADVI",
     prop = TRUE,
-    caption = "Frequencies of HMC and ADVI significance calls at 99\\% threshold for BaseQTL with unknown genotypes.",
-    label = "tab:nogt-xtab-prop-99",
-    file = "table/noGT-xtab-prop-99.tex"
+    caption = sprintf("Frequencies of HMC and ADVI significance calls at 99\\%% threshold for BaseQTL %s", modname),
+    label = sprintf("tab:%s-xtab-prop-99", model),
+    file = sprintf("table/%s-xtab-prop-99.tex", model)
 )
 
 
@@ -224,7 +238,7 @@ mdf_discordant <- mdf_filtered_outliers[!(mdf_filtered_outliers$null.95.hmc == m
 gpd95 <- ggplot(mdf_discordant) +
     aes(mean.hmc, mean.vb, colour = nullstr95) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -240,7 +254,7 @@ mdf_discordant <- mdf_filtered_outliers[!(mdf_filtered_outliers$null.99.hmc == m
 gpd99 <- ggplot(mdf_discordant) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale +
@@ -286,6 +300,179 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-both-99.eps", fpath, model),
     width = 6, height = 4
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# stop()
+if (model == "GT") {
+
+    lab_str <- "HMC: %s\nPathfinder: %s\n"
+    df_pf_hmc$nullstr95 <- sprintf(lab_str,
+        ifelse(df_pf_hmc$null.95.hmc, "yes", "no"),
+        ifelse(df_pf_hmc$null.95.vb, "yes", "no")
+    )
+    df_pf_hmc$nullstr99 <- sprintf(lab_str,
+        ifelse(df_pf_hmc$null.99.hmc, "yes", "no"),
+        ifelse(df_pf_hmc$null.99.vb, "yes", "no")
+    )
+    null_levs <- sprintf(
+        lab_str,
+        c("no", "yes", "yes", "no"),
+        c("no", "no",  "yes", "yes")
+    )
+    null_ord <- null_levs[c(1, 3, 2, 4)]
+
+    scale <- scale_colour_manual(
+        values = setNames(c("#fb9a99", "#e31a1c", "#a6cee3", "#1f78b4"), null_levs),
+        drop = TRUE,
+        name = "Significance"
+    )
+
+    df_pf_hmc$nullstr95 <- factor(df_pf_hmc$nullstr95, levels = null_ord)
+    df_pf_hmc$nullstr99 <- factor(df_pf_hmc$nullstr99, levels = null_ord)
+
+
+    mdf_filtered_outliers <- df_pf_hmc[abs(df_pf_hmc$mean.vb) < 2, ]
+    lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
+
+    gp99 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr99), ]) +
+        aes(mean.hmc, mean.vb, colour = nullstr99) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        geom_point(shape = 16, size = 0.75, alpha = 0.7) +
+        lims(x = lim, y = lim) +
+        labs(x = "HMC estimate", y = "Pathfinder estimate") +
+        scale +
+        guides(colour = guide_legend(override.aes = list(size = 2))) +
+        theme(legend.position = "bottom")
+    ggsave(
+        sprintf("%s/%s/estimates/point-estimates-99-pf.pdf", fpath, model),
+        width = 6, height = 6
+    )
+    make_crosstab(
+        x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+        y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
+        xn = "HMC",
+        yn = "Pathfinder",
+        caption = sprintf("Confusion matrix of HMC and Pathfinder significance calls at 99\\%% threshold for BaseQTL %s", modname),
+        label = sprintf("tab:%s-xtab-99-pf", model),
+        file = sprintf("table/%s-xtab-99-pf.tex", model)
+    )
+    make_crosstab(
+        x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+        y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
+        xn = "HMC",
+        yn = "ADVI",
+        prop = TRUE,
+        caption = sprintf("Frequencies of HMC and Pathfinder significance calls at 99\\%% threshold for BaseQTL %s", modname),
+        label = sprintf("tab:%s-xtab-prop-99-pf", model),
+        file = sprintf("table/%s-xtab-prop-99-pf.tex", model)
+    )
+
+
+
+
+
+    lab_str <- "HMC: %s\nPathfinder: %s\n"
+    df_pfp_hmc$nullstr95 <- sprintf(lab_str,
+        ifelse(df_pfp_hmc$null.95.hmc, "yes", "no"),
+        ifelse(df_pfp_hmc$null.95.vb, "yes", "no")
+    )
+    df_pfp_hmc$nullstr99 <- sprintf(lab_str,
+        ifelse(df_pfp_hmc$null.99.hmc, "yes", "no"),
+        ifelse(df_pfp_hmc$null.99.vb, "yes", "no")
+    )
+    df_pfp_hmc$nullstr95 <- factor(df_pfp_hmc$nullstr95, levels = null_ord)
+    df_pfp_hmc$nullstr99 <- factor(df_pfp_hmc$nullstr99, levels = null_ord)
+
+
+
+
+    mdf_filtered_outliers <- df_pfp_hmc[abs(df_pfp_hmc$mean.vb) < 2, ]
+    lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
+
+    gp99 <- ggplot(mdf_filtered_outliers[order(mdf_filtered_outliers$nullstr99), ]) +
+        aes(mean.hmc, mean.vb, colour = nullstr99) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        geom_point(shape = 16, size = 0.75, alpha = 0.7) +
+        lims(x = lim, y = lim) +
+        labs(x = "HMC estimate", y = "Pathfinder estimate") +
+        scale +
+        guides(colour = guide_legend(override.aes = list(size = 2))) +
+        theme(legend.position = "bottom")
+    ggsave(
+        sprintf("%s/%s/estimates/point-estimates-99-pfp.pdf", fpath, model),
+        width = 6, height = 6
+    )
+    make_crosstab(
+        x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+        y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
+        xn = "HMC",
+        yn = "Pathfinder",
+        caption = sprintf("Confusion matrix of HMC and Pathfinder significance calls at 99\\%% threshold for BaseQTL %s", modname),
+        label = sprintf("tab:%s-xtab-99-pfp", model),
+        file = sprintf("table/%s-xtab-99-pfp.tex", model)
+    )
+    make_crosstab(
+        x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
+        y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
+        xn = "HMC",
+        yn = "ADVI",
+        prop = TRUE,
+        caption = sprintf("Frequencies of HMC and Pathfinder significance calls at 99\\%% threshold for BaseQTL %s", modname),
+        label = sprintf("tab:%s-xtab-prop-99-pfp", model),
+        file = sprintf("table/%s-xtab-prop-99-pfp.tex", model)
+    )
+
+    ## time comparison
+    g <- ggplot(df_pfp_hmc) +
+        aes(time.hmc, time.vb) +
+        geom_pointdensity(shape = 16, size = 0.8) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        scale_x_log10() +
+        scale_y_log10() +
+        scale_colour_viridis() +
+        theme(legend.position = "none") +
+        labs(x = "Time (s) for HMC", y = "Time (s) for Pathfinder")
+    ggsave(
+        sprintf("%s/%s/time/time_hmc_vs_pfp.pdf", fpath, model),
+        width = 5, height = 5
+    )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## by snp
@@ -449,8 +636,8 @@ for (t in c(99, 95)) {
 ## time comparison
 g <- ggplot(df_vb_hmc) +
     aes(time.hmc, time.vb) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     geom_pointdensity(shape = 16, size = 0.8) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     scale_x_log10() +
     scale_y_log10() +
     scale_colour_viridis() +
@@ -550,7 +737,7 @@ pd1 <- ggplot(mdf_filtered_outliers[order(abs(mdf_filtered_outliers$discrepancy)
 pd2 <- ggplot(mdf_filtered_outliers[order(abs(mdf_filtered_outliers$relative_discrepancy)), ]) +
     aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey80") +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
     lims(x = lim, y = lim) +
     labs(x = "HMC estimate", y = "ADVI estimate") +
     scale_colour_viridis(name = "Relative absolute difference", trans="log10") +

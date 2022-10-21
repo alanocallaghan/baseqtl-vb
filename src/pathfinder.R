@@ -368,7 +368,7 @@ opt_path_stan_parallel <- function(
         list_ind[[i]] <- i
     }
 
-    out <- mclapply(list_ind,
+    out <- parallel::mclapply(list_ind,
         function(x) {
             opt_path(
                 init = init[[x]] ,fn = fn, gr = gr, N1 = N1, N_sam_DIV = N_sam_DIV,
@@ -767,7 +767,7 @@ Imp_Resam_WOR <- function(param_path, n_inits, seed = 123){
     lrms <- lrms[finit_ind]
     
     ## compute the importance weight ##
-    sample_weights_psis <- suppressWarnings(weights(psis(lrms, r_eff = NA),
+    sample_weights_psis <- suppressWarnings(weights(loo::psis(lrms, r_eff = NA),
                                                     log = FALSE))
     #sample_weights_IS <- exp(lrms - max(lrms))/sum(exp(lrms - max(lrms)))
     
@@ -810,7 +810,7 @@ Imp_Resam_WR <- function(param_path, n_sam, seed = 123){
     lrms <- lrms[finit_ind]
     
     ## compute the importance weight ##
-    sample_weights_psis <- suppressWarnings(weights(psis(lrms, r_eff = NA),
+    sample_weights_psis <- suppressWarnings(weights(loo::psis(lrms, r_eff = NA),
                                                     log = FALSE))
     #sample_weights_IS <- exp(lrms - max(lrms))/sum(exp(lrms - max(lrms)))
     
@@ -846,7 +846,7 @@ Imp_Resam_Each <- function(param_path, seed){
                 samples <- samples[, finit_ind]
                 lrms <- lrms[finit_ind]
 
-                psis_w <- suppressWarnings(weights(psis(lrms, r_eff = NA), log = FALSE))
+                psis_w <- suppressWarnings(weights(loo::psis(lrms, r_eff = NA), log = FALSE))
                 pick_ind <- sample(1:length(psis_w),
                     replace = TRUE,
                     size = 1, prob = psis_w
@@ -979,7 +979,7 @@ filter_samples_resam <- function(param_path, n_inits, seed = 123){
     lp_approx <- apply(lp_approx_M, 1, logSumExp)
     lrms <- lps - lp_approx
     
-    sample_weights <- suppressWarnings(weights(psis(lrms, r_eff = NA), log = FALSE))
+    sample_weights <- suppressWarnings(weights(loo::psis(lrms, r_eff = NA), log = FALSE))
     
     samples_M <- matrix(unlist(samples), nrow = nrow(samples[[1]]))
     

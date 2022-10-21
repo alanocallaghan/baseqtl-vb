@@ -82,7 +82,7 @@ extract_params <- function(fit) {
 ## some wrappers to define sensible defaults for stan
 optimizing <- function(...) {
     while (TRUE) {
-        f <- try(rstan::optimizing(...), silent = TRUE)
+        f <- try(rstan::optimizing(..., draws = 1000), silent = TRUE)
         if (!inherits(f, "try-error")) {
             return (f)
         }
@@ -99,8 +99,8 @@ vb <- function(..., tol_rel_obj = 1e-2, n_iterations = 50000) {
     }
 }
 
-sampling <- function(..., chains = 4) {
-    rstan::sampling(..., chains = chains, open_progress = FALSE)
+sampling <- function(..., chains = 4, cores = 1) {
+    rstan::sampling(..., chains = chains, cores = cores, open_progress = FALSE)
 }
 
 fit_stan_GT <- function(
@@ -115,6 +115,7 @@ fit_stan_GT <- function(
         model = baseqtl:::stanmodels$GT_nb_ase_refbias,
         probs = seq(0.005, 0.995, by = 0.005),
         summarise_posterior = TRUE,
+        seed = 42,
         ...
     ) {
     method <- match.arg(method)
@@ -143,8 +144,9 @@ fit_stan_GT <- function(
     if (is.list(init) && method == "sampling") {
         init <- replicate(4, init, simplify = FALSE)
     }
+    set.seed(seed)
     t0 <- proc.time()
-    capture.output(
+    console <- capture.output(
         post <- fun(
             model,
             data = data,
@@ -158,6 +160,9 @@ fit_stan_GT <- function(
     }
     
     tab <- summarise_post(post, method, vars, probs)
+    if (method == "vb") {
+        attr(tab, "elbo") <- parse_elbo(console)
+    }
     tab$gene <- gene
     tab$time <- time[["elapsed"]]
     tab$snp <- snp
@@ -167,14 +172,15 @@ fit_stan_GT <- function(
 summarise_post <- function(post, method, vars, probs) {
     if (method %in% c("optimizing", "pathfinder", "pathfinder_parallel")) {
         if (method == "optimizing") {
-            post <- post$theta_tilde
+            draws <- as.data.frame(post$theta_tilde)
         }
         tab <- posterior::summarise_draws(
-            post,
+            draws,
             mean,
             sd,
             ~quantile(.x, probs = probs)
         )
+        tab <- as.data.frame(tab)
         if (!is.null(vars)) {
             tab <- tab[tab$variable %in% vars, ]
         }
@@ -183,12 +189,15 @@ summarise_post <- function(post, method, vars, probs) {
             post,
             probs = probs
         )$summary
+        tab <- as.data.frame(tab)
         if (!is.null(vars)) {
             tab <- tab[rownames(tab) %in% vars, ]
         }
+        draws <- extract(post)
     }
-    tab <- as.data.frame(tab)
     tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
+    p <- mean(draws$bj > 0)
+    tab$PEP <- 2 * max(p, 1 - p) - 1
     tab
 }
 
@@ -204,6 +213,7 @@ fit_stan_noGT <- function(
         model = baseqtl:::stanmodels$noGT_nb_ase,
         probs = seq(0.005, 0.995, by = 0.005),
         summarise_posterior = TRUE,
+        seed = 42,
         ...
     ) {
 
@@ -244,7 +254,7 @@ fit_stan_noGT <- function(
                 init <- replicate(4, init, simplify = FALSE)
             }
             t0 <- proc.time()
-            capture.output(
+            console <- capture.output(
                 post <- fun(
                     model,
                     data = data,
@@ -252,11 +262,15 @@ fit_stan_noGT <- function(
                     ...
                 )
             )
+            set.seed(seed)
             time <- proc.time() - t0
             if (!summarise_posterior) {
                 return(post)
             }
             tab <- summarise_post(post, method, vars, probs)
+            if (method == "vb") {
+                attr(tab, "elbo") <- parse_elbo(console)
+            }
             tab$gene <- gene
             tab$time <- time[["elapsed"]]
             tab$snp <- snp
@@ -447,7 +461,29 @@ expanded_range <- function(x, frac = 0.01, maxabs = NULL) {
 }
 
 mkfigdir <- function(fpath, model) {
-    sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc")), function(p) {
+    sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc", "variability")), function(p) {
         dir.create(p, showWarnings = FALSE, recursive = TRUE)
     })
+}
+
+
+diagname <- function(x) {
+    diag_vars <- c(
+        "gene" = "Gene",
+        "Rhat" = TeX("\\hat{R}"),
+        "khat" = TeX("\\hat{k}"),
+        "converged" = "ADVI converged",
+        "niter" = "ADVI iterations",
+        "n_eff.hmc" = "Effective sample size",
+        "time.hmc" = "Time taken",
+        "n_tot" = "Sample size",
+        "p_het" = "Proportion heterozygous",
+        "se_mean.hmc" = "SE(mean)",
+        "sd.hmc" = "Posterior SD",
+        "mean_count" = "mean(RNAseq counts)",
+        "sd_count" = "SD(RNAseq counts)",
+        "n_wt" = "Number of mut individuals",
+        "n_het" = "Number of het individuals",
+        "n_hom" = "Number of hom ref individuals"
+    )[[x]]
 }

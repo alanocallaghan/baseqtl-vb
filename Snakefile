@@ -24,13 +24,18 @@ wildcard_constraints:
 rule all:
     input:
         expand(
-            "fig/{tol}/GT/estimates/point-estimates-95.png",
+            "fig_{tol}/GT/estimates/point-estimates-95.png",
             tol = tols
+        ),
+        expand(
+            "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf",
+            tol = tols
+            # "fig_{tol}/noGT/diag/KS-meanfield-fullrank.pdf"
         )
         # ,
-        # "fig/{tol}/noGT/estimates/point-estimates-95.png",
-        # "fig/{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
-        # "fig/{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
+        # "fig_{tol}/noGT/estimates/point-estimates-95.png",
+        # "fig_{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
+        # "fig_{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
 
 rule plots:
     resources: runtime="02:00:00"
@@ -43,19 +48,42 @@ rule plots:
         # "rds/GT/components/sampling_{tol}_combined.rds",
         # "rds/GT/components/vb_{tol}_combined.rds",
     output:
-        "fig/{tol}/GT/estimates/point-estimates-95.png",
-        "fig/{tol}/noGT/estimates/point-estimates-95.png"
-        # "fig/{tol}/noGT/estimates/point-estimates-95.png"
-        # "fig/GT/components/estimates/point-estimates.png",
-        # "fig/{tol}/noGT/estimates/point-estimates-95.png",
-        # "fig/{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
-        # "fig/{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
+        "fig_{tol}/GT/estimates/point-estimates-95.png",
+        "fig_{tol}/noGT/estimates/point-estimates-95.png",
+        "fig_{tol}/GT/variability/mean-var-pointrange.pdf,
+        "fig_{tol}/noGT/variability/mean-var-pointrange.pdf
+        # "fig_{tol}/noGT/estimates/point-estimates-95.png"
+        # "fig_{tol}/GT/components/estimates/point-estimates.png",
+        # "fig_{tol}/noGT/estimates/point-estimates-95.png",
+        # "fig_{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
+        # "fig_{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
     shell:
         """
         Rscript ./src/plot-times.R -m GT -t {wildcards.tol}
         Rscript ./src/plot-times.R -m noGT -t {wildcards.tol}
+        Rscript ./src/plot-variability.R -m GT -t {wildcards.tol}
+        Rscript ./src/plot-variability.R -m noGT -t {wildcards.tol}
         Rscript ./src/plot-lm.R -t {wildcards.tol}
         # Rscript ./src/plot-components.R -m GT -t {wildcards.tol}
+        """
+
+rule plot_meanfield:
+    input:
+        [
+            expand(
+                "rds/{model}/vb_{{tol}}/meanfield/{gene}_s{seed}.rds",
+                model = mod,
+                gene = dicts[mod].keys(),
+                seed = 42
+            ) for mod in models
+        ]
+    output:
+        "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf",
+        "fig_{tol}/noGT/diag/KS-meanfield-fullrank.pdf"
+    shell:
+        """
+        Rscript ./src/plot-meanfield.R -m GT
+        Rscript ./src/plot-meanfield.R -m noGT
         """
 
 rule process:
@@ -79,16 +107,17 @@ rule process:
                 seed = 42
             )
             for mod in models
-        ],
-        [
-            expand(
-                "rds/{model}/vb_{{tol}}/meanfield/{gene}_s{seed}.rds",
-                model = mod,
-                gene = dicts[mod].keys(),
-                seed = 42
-            )
-            for mod in models
         ]
+        # ,
+        # [
+        #     expand(
+        #         "rds/{model}/vb_{{tol}}/meanfield/{gene}_s{seed}.rds",
+        #         model = mod,
+        #         gene = dicts[mod].keys(),
+        #         seed = 42
+        #     )
+        #     for mod in models
+        # ]
     output:
         "rds/{model}/sampling_{tol}_combined.rds",
         "rds/{model}/vb_{tol}_combined.rds",
@@ -129,7 +158,7 @@ rule run_gt_components:
         Rscript src/run-snp-sep.R \
             -m GT \
             -i {wildcards.method} \
-            -g "{wildcards.gene}" \
+            -g {wildcards.gene} \
             -t {wildcards.tol} \
             -c {threads} \
             -s {wildcards.seed}
@@ -149,7 +178,7 @@ rule run_gt:
         Rscript src/run-snp.R \
             -m GT \
             -i {wildcards.method} \
-            -g "{wildcards.gene}" \
+            -g {wildcards.gene} \
             -t {wildcards.tol} \
             -c {threads} \
             -s {wildcards.seed}
@@ -168,7 +197,7 @@ rule run_nogt:
         Rscript src/run-snp.R \
             -m noGT \
             -i {wildcards.method} \
-            -g "{wildcards.gene}" \
+            -g {wildcards.gene} \
             -t {wildcards.tol} \
             -c {threads} \
             -s {wildcards.seed} 
@@ -177,7 +206,7 @@ rule run_nogt:
 
 rule run_gt_mf:
     resources: runtime="05:00:00", mem_mb=10000
-    threads: 1
+    threads: 8
     input:
         gt_in_dir + "rbias.{gene}.GT.stan1.input.rds"
     output:
@@ -188,12 +217,13 @@ rule run_gt_mf:
             -m GT \
             -g "{wildcards.gene}" \
             -t {wildcards.tol} \
+            -c {threads} \
             -s {wildcards.seed}
         """
 
 rule run_nogt_mf:
     resources: runtime="05:00:00", mem_mb=10000
-    threads: 1
+    threads: 8
     input:
         normal = nogt_in_dir + "refbias.{gene}.normal_skin.noGT.stan.input.rds",
         Psoriasis = nogt_in_dir + "refbias.{gene}.Psoriasis_skin.noGT.stan.input.rds"
@@ -205,6 +235,7 @@ rule run_nogt_mf:
             -m noGT \
             -g "{wildcards.gene}" \
             -t {wildcards.tol} \
+            -c {threads} \
             -s {wildcards.seed}
         """
 

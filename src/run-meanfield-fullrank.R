@@ -71,7 +71,6 @@ snps <- get_snps(gene_data)
 use <- 1:min(10, length(snps))
 res <- parallel::mclapply(snps[use],
     function(snp) {
-        print(snp)
         types <- c("meanfield", "fullrank")
         set.seed(seed)
         out <- lapply(types,
@@ -107,31 +106,6 @@ res <- parallel::mclapply(snps[use],
 names(res) <- snps[use]
 saveRDS(res, sprintf("rds/%s/%s/meanfield/%s_s%d.rds", model, mtol, gene, seed))
 
-
-# draws <- lapply(res,
-#     function(x) {
-#         tab <- lapply(names(x),
-#             function(n) {
-#                 extract(x[[n]], pars = "bj")
-#             }
-#         )
-#         tab <- as.data.frame(tab)
-#         colnames(tab) <- names(x)
-#         tab$snp <- names(res)
-#         tab$gene <- gene
-#         tab
-#     }
-# )
-# draws_df <- do.call(rbind, draws)
-# mdf <- reshape2::melt(draws_df, id.vars = c("snp", "gene"))
-
-# library(ggdist)
-# g <- ggplot(mdf) +
-#     aes(x = snp, colour = variable, fill = variable, y = value) +
-#     stat_pointinterval(position = position_dodge()) +
-#     scale_colour_brewer(palette = "Paired", aesthetics = c("fill", "colour")) +
-#     theme_bw()
-# ggsave("tmp.png")
 
 cat("Done!\n")
 

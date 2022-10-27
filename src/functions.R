@@ -1,3 +1,6 @@
+library("ggplot2")
+theme_set(theme_bw())
+
 #' Plot the ELBO over iterations of the Stan variational Bayes algorithm ADVI.
 #' 
 #' @param x An object of class "scive".

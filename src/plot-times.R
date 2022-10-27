@@ -87,7 +87,7 @@ by <- if (model == "GT") {
         "n_wt", "n_het", "n_hom", "p_het", "n_tot"
     )
 }
-dfs[["vb"]] <- dfs[["vb"]][dfs[["vb"]]$seed == "42", ]
+dfs[["vb"]] <- dfs[["vb"]][dfs[["vb"]]$seed == "7", ]
 df_vb_hmc <- merge(dfs[["vb"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 
 if (model == "GT") {

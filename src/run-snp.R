@@ -71,8 +71,8 @@ covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
-# tmp <- parallel::mclapply(snps,
-res <- lapply(snps,
+res <- parallel::mclapply(snps,
+# res <- lapply(snps,
     function(snp) {
         cat("Running", snp, "\n")
         tab <- fit_fun(
@@ -87,8 +87,8 @@ res <- lapply(snps,
         tab <- as.data.frame(tab)
         tab$seed <- seed
         tab
-    }
-    # }, mc.cores = args[["cores"]]
+    # }
+    }, mc.cores = args[["cores"]]
 )
 
 print(sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed))

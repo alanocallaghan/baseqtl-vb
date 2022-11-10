@@ -30,12 +30,7 @@ rule all:
         expand(
             "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf",
             tol = tols
-            # "fig_{tol}/noGT/diag/KS-meanfield-fullrank.pdf"
         )
-        # ,
-        # "fig_{tol}/noGT/estimates/point-estimates-95.png",
-        # "fig_{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
-        # "fig_{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
 
 rule plots:
     resources: runtime="02:00:00"
@@ -44,19 +39,11 @@ rule plots:
         "rds/GT/vb_{tol}_combined.rds",
         "rds/noGT/sampling_{tol}_combined.rds",
         "rds/noGT/vb_{tol}_combined.rds"
-
-        # "rds/GT/components/sampling_{tol}_combined.rds",
-        # "rds/GT/components/vb_{tol}_combined.rds",
     output:
         "fig_{tol}/GT/estimates/point-estimates-95.png",
         "fig_{tol}/noGT/estimates/point-estimates-95.png",
-        "fig_{tol}/GT/variability/mean-var-pointrange.pdf,
-        "fig_{tol}/noGT/variability/mean-var-pointrange.pdf
-        # "fig_{tol}/noGT/estimates/point-estimates-95.png"
-        # "fig_{tol}/GT/components/estimates/point-estimates.png",
-        # "fig_{tol}/noGT/estimates/point-estimates-95.png",
-        # "fig_{tol}/noGT/estimates/sampling_mcmc_all_categorical_95.png",
-        # "fig_{tol}/noGT/estimates/vb_mcmc_all_categorical_95.png"
+        "fig_{tol}/GT/variability/mean-var-pointrange.pdf",
+        "fig_{tol}/noGT/variability/mean-var-pointrange.pdf"
     shell:
         """
         Rscript ./src/plot-times.R -m GT -t {wildcards.tol}
@@ -88,6 +75,7 @@ rule plot_meanfield:
 
 rule process:
     resources: runtime="02:00:00"
+    threads: 8
     input:
         [
             expand(
@@ -108,22 +96,10 @@ rule process:
             )
             for mod in models
         ]
-        # ,
-        # [
-        #     expand(
-        #         "rds/{model}/vb_{{tol}}/meanfield/{gene}_s{seed}.rds",
-        #         model = mod,
-        #         gene = dicts[mod].keys(),
-        #         seed = 42
-        #     )
-        #     for mod in models
-        # ]
     output:
         "rds/{model}/sampling_{tol}_combined.rds",
         "rds/{model}/vb_{tol}_combined.rds",
         "rds/{model}/vb_{tol}_meanfield.rds"
-        # "rds/GT/pathfinder_combined.rds",
-        # "rds/GT/pathfinder_parallel_combined.rds",
     shell:
         """
         Rscript src/process-files.R -i sampling -m {wildcards.model}
@@ -164,8 +140,6 @@ rule run_gt_components:
             -s {wildcards.seed}
         """
 
-
-
 rule run_gt:
     resources: runtime="05:00:00", mem_mb=10000
     threads: 8
@@ -202,7 +176,6 @@ rule run_nogt:
             -c {threads} \
             -s {wildcards.seed} 
         """
-
 
 rule run_gt_mf:
     resources: runtime="05:00:00", mem_mb=10000

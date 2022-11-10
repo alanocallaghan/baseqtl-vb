@@ -1,6 +1,7 @@
 library("argparse")
 library("baseqtl")
 library("dplyr")
+library("BiocParallel")
 
 parser <- ArgumentParser()
 parser$add_argument(
@@ -24,14 +25,13 @@ args <- parser$parse_args()
 method <- args[["inference"]]
 tol <- args[["tolerance"]]
 model <- args[["model"]]
+register(MulticoreParam(workers = 8[]))
 
 mtol <- sprintf("%s_%1.0e", method, tol)
 # mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
 
-
 sfile <- sprintf("rds/%s/sfile.rds", model)
 combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
-
 
 if (model == "GT") {
     dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
@@ -47,8 +47,8 @@ if (model == "GT") {
     genes <- unique(gsub(".*(ENSG\\d+).*", "\\1", outfiles))
     infiles <- sprintf("%s/rbias.%s.GT.stan1.input.rds", dir, genes)
 
-    # dfs <- parallel::mclapply(
-    dfs <- lapply(
+    dfs <- bplapply(
+    # dfs <- lapply(
         1:length(genes),
         function(i) {
             cat(i, "/", length(genes), "\n")
@@ -99,8 +99,8 @@ if (model == "GT") {
             df <- out
             df <- merge(covars, df)
             df
+        # }
         }
-        # }, mc.cores = 8
     )
 
     df_out <- do.call(rbind, dfs)
@@ -133,8 +133,8 @@ if (model == "GT") {
             n_hom = sum(abs(inp1$gase) == 2)
         )
     }
-    # dfs <- parallel::mclapply(
-    dfs <- lapply(
+    dfs <- bplapply(
+    # dfs <- lapply(
         1:length(genes),
         function(i) {
             cat(i, "/", length(genes), "\n")
@@ -173,8 +173,8 @@ if (model == "GT") {
             covars$gene <- genes[[i]]
             df_all <- merge(covars, out, by = c("snp", "gene", "condition"))
             df_all
+        # }
         }
-        # }, mc.cores = 8
     )
     df_out <- do.call(rbind, dfs)
     df_out$test <- paste(df_out$gene, df_out$snp , sep = "_")

@@ -1,6 +1,7 @@
 library("baseqtl")
 library("argparse")
 library("rstan")
+library("BiocParallel")
 
 parser <- ArgumentParser()
 parser$add_argument(
@@ -11,7 +12,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-i", "--inference",
-    default = "vb",
+    default = "sampling",
     # default = "pathfinder",
     type = "character"
 )
@@ -22,7 +23,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-s", "--seed",
-    default = 42,
+    # default = 42,
     type = "integer"
 )
 parser$add_argument(
@@ -43,13 +44,13 @@ parser$add_argument(
 # )
 parser$add_argument(
     "-t", "--tolerance",
-    default = 1e-3,
+    default = 1e-2,
     type = "double"
 )
 
 args <- parser$parse_args()
 
-
+register(MulticoreParam(workers = args[["cores"]]))
 source("src/functions.R")
 source("src/pathfinder.R")
 tol <- args[["tolerance"]]
@@ -71,7 +72,8 @@ covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
-res <- parallel::mclapply(snps,
+
+res <- bplapply(snps,
 # res <- lapply(snps,
     function(snp) {
         cat("Running", snp, "\n")
@@ -88,9 +90,15 @@ res <- parallel::mclapply(snps,
         tab$seed <- seed
         tab
     # }
-    }, mc.cores = args[["cores"]]
+    }
 )
 
-print(sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed))
-saveRDS(res, sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed))
+if (is.null(seed)) {
+    f <- sprintf("rds/%s/%s/%s_sNULL.rds", model, mtol, gene)
+} else {
+    f <- sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed)
+}
+print(f)
+saveRDS(res, f)
 cat("Done!\n")
+# ./noGT/vb_1e-03/ENSG00000002330_sNULL.rds

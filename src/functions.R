@@ -24,6 +24,24 @@ plot_elbo <- function(elbo) {
     }
 }
 
+add_nulls <- function(df, suffix = "") {
+    ## TRUE means that the HPD interval is one side of zero (sig)
+    ## FALSE means it overlaps zero (null)
+    df[[paste0("null.99", suffix)]] <- sign(df[[paste0("0.5%", suffix)]]) == sign(df[[paste0("99.5%", suffix)]])
+    df[[paste0("null.95", suffix)]] <- sign(df[[paste0("2.5%", suffix)]]) == sign(df[[paste0("97.5%", suffix)]])
+    df[[paste0("null.90", suffix)]] <- sign(df[[paste0("5.0%", suffix)]]) == sign(df[[paste0("95.0%", suffix)]])
+    df[[paste0("null.80", suffix)]] <- sign(df[[paste0("10.0%", suffix)]]) == sign(df[[paste0("90.0%", suffix)]])
+    df[[paste0("null.70", suffix)]] <- sign(df[[paste0("15.0%", suffix)]]) == sign(df[[paste0("85.0%", suffix)]])
+    df[[paste0("null.60", suffix)]] <- sign(df[[paste0("20.0%", suffix)]]) == sign(df[[paste0("80.0%", suffix)]])
+    df[[paste0("null.50", suffix)]] <- sign(df[[paste0("25.0%", suffix)]]) == sign(df[[paste0("75.0%", suffix)]])
+    df[[paste0("null.40", suffix)]] <- sign(df[[paste0("30.0%", suffix)]]) == sign(df[[paste0("70.0%", suffix)]])
+    df[[paste0("null.30", suffix)]] <- sign(df[[paste0("35.0%", suffix)]]) == sign(df[[paste0("65.0%", suffix)]])
+    df[[paste0("null.20", suffix)]] <- sign(df[[paste0("40.0%", suffix)]]) == sign(df[[paste0("60.0%", suffix)]])
+    df[[paste0("null.10", suffix)]] <- sign(df[[paste0("45.0%", suffix)]]) == sign(df[[paste0("55.0%", suffix)]])
+    df
+}
+
+
 parse_elbo <- function(elbo) {
     elbo <- gsub("Chain 1:\\s+", "", elbo)
     normal <- grep("Drawing", elbo)

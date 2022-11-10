@@ -4,11 +4,11 @@
 
 library("baseqtl")
 library("argparse")
-library("rstan")
 library("ggdist")
 library("dplyr")
 library("tidyr")
 library("transport")
+library("rstan")
 library("ggpointdensity")
 library("viridis")
 
@@ -103,6 +103,7 @@ if (model == "noGT") {
         aes(wass_mf, wass_fr) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         geom_pointdensity() +
+        # geom_point() +
         scale_colour_viridis(guide = "none") +
         labs(x = "Wassertein(mean field VB | HMC)", y = "Wassertein(full rank VB | HMC)")
     # ggsave("was2.png")
@@ -110,10 +111,12 @@ if (model == "noGT") {
         sprintf("%s/%s/diag/wasserstein-meanfield-fullrank.pdf", fpath, model),
         width = 5, height = 5
     )
+
     g <- ggplot(em_df) +
         aes(ks_mf, ks_fr) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         geom_pointdensity() +
+        # geom_point() +
         scale_colour_viridis(guide = "none") +
         labs(x = "KS(mean field VB || HMC)", y = "KS(full rank VB || HMC)")
     # ggsave("was2.png")
@@ -139,31 +142,38 @@ if (model == "noGT") {
     em_df <- draws_df |>
         group_by(gene, snp) |>
         summarise(
-            ks_mf = ks.test(meanfield[[1]], hmc[[1]], exact = FALSE)$statistic,
-            ks_fr = ks.test(fullrank[[1]], hmc[[1]], exact = FALSE)$statistic,
+            ks_mf = ks.test(meanfield, hmc, exact = FALSE)$statistic,
+            ks_fr = ks.test(fullrank, hmc, exact = FALSE)$statistic,
             wass_mf = wasserstein1d(meanfield, hmc),
             wass_fr = wasserstein1d(fullrank, hmc),
             .groups = "drop_last"
         )
-    g <- ggplot(em_df) +
+    g1 <- ggplot(em_df) +
         aes(wass_mf, wass_fr) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         geom_pointdensity() +
+        # geom_point() +
         scale_colour_viridis(guide = "none") +
         labs(x = "Wassertein(mean field VB | HMC)", y = "Wassertein(full rank VB | HMC)")
     ggsave(
         sprintf("%s/%s/diag/wasserstein-meanfield-fullrank.pdf", fpath, model),
-        width = 5, height = 5
+        width = 4, height = 4
     )
-    g <- ggplot(em_df) +
+
+    g2 <- ggplot(em_df) +
         aes(ks_mf, ks_fr) +
         geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
         geom_pointdensity() +
+        # geom_point() +
         scale_colour_viridis(guide = "none") +
         labs(x = "KS(mean field VB | HMC)", y = "KS(full rank VB | HMC)")
     ggsave(
         sprintf("%s/%s/diag/KS-meanfield-fullrank.pdf", fpath, model),
-        width = 5, height = 5
+        width = 4, height = 4
     )
-
+    gg <- cowplot::plot_grid(g1, g2, labels = "AUTO")
+    ggsave(
+        sprintf("%s/%s/diag/meanfield-fullrank.pdf", fpath, model),
+        width = 6, height = 3
+    )
 }

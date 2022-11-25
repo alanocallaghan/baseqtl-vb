@@ -5,37 +5,37 @@ library("BiocParallel")
 
 parser <- ArgumentParser()
 parser$add_argument(
-    "-m", "--model",
-    default = "GT",
-    # default = "noGT",
-    type = "character"
+  "-m", "--model",
+  default = "GT",
+  # default = "noGT",
+  type = "character"
 )
 parser$add_argument(
-    "-i", "--inference",
-    default = "sampling",
-    # default = "pathfinder",
-    type = "character"
+  "-i", "--inference",
+  default = "sampling",
+  # default = "pathfinder",
+  type = "character"
 )
 parser$add_argument(
-    "-n", "--n_iterations",
-    default = 50000,
-    type = "integer"
+  "-n", "--n_iterations",
+  default = 50000,
+  type = "integer"
 )
 parser$add_argument(
-    "-s", "--seed",
-    # default = 42,
-    type = "integer"
+  "-s", "--seed",
+  # default = 42,
+  type = "integer"
 )
 parser$add_argument(
-    "-c", "--cores",
-    default = 1,
-    type = "integer"
+  "-c", "--cores",
+  default = 1,
+  type = "integer"
 )
 parser$add_argument(
-    "-g", "--gene",
-    # default = "ENSG00000002330", ## nogt
-    default = "ENSG00000025708", ## gt
-    type = "character"
+  "-g", "--gene",
+  # default = "ENSG00000002330", ## nogt
+  default = "ENSG00000025708", ## gt
+  type = "character"
 )
 # parser$add_argument(
 #     "-s", "--snp",
@@ -43,9 +43,9 @@ parser$add_argument(
 #     type = "character"
 # )
 parser$add_argument(
-    "-t", "--tolerance",
-    default = 1e-2,
-    type = "double"
+  "-t", "--tolerance",
+  default = 1e-2,
+  type = "double"
 )
 
 args <- parser$parse_args()
@@ -73,30 +73,31 @@ gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
 
-res <- bplapply(snps,
-# res <- lapply(snps,
-    function(snp) {
-        cat("Running", snp, "\n")
-        tab <- fit_fun(
-            gene_data = gene_data,
-            gene = gene,
-            snp = snp,
-            covariates = covariates,
-            method = method,
-            seed = seed,
-            tol = tol
-        )
-        tab <- as.data.frame(tab)
-        tab$seed <- seed
-        tab
+res <- bplapply(
+  snps,
+  # res <- lapply(snps,
+  function(snp) {
+    cat("Running", snp, "\n")
+    tab <- fit_fun(
+      gene_data = gene_data,
+      gene = gene,
+      snp = snp,
+      covariates = covariates,
+      method = method,
+      seed = seed,
+      tol = tol
+    )
+    tab <- as.data.frame(tab)
+    tab$seed <- seed
+    tab
     # }
-    }
+  }
 )
 
 if (is.null(seed)) {
-    f <- sprintf("rds/%s/%s/%s_sNULL.rds", model, mtol, gene)
+  f <- sprintf("rds/%s/%s/%s_sNULL.rds", model, mtol, gene)
 } else {
-    f <- sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed)
+  f <- sprintf("rds/%s/%s/%s_s%d.rds", model, mtol, gene, seed)
 }
 print(f)
 saveRDS(res, f)

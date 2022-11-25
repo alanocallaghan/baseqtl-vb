@@ -8,36 +8,36 @@ library("rstan")
 
 parser <- ArgumentParser()
 parser$add_argument(
-    "-m", "--model",
-    # default = "GT",
-    default = "noGT",
-    type = "character"
+  "-m", "--model",
+  # default = "GT",
+  default = "noGT",
+  type = "character"
 )
 parser$add_argument(
-    "-n", "--n_iterations",
-    default = 50000,
-    type = "integer"
+  "-n", "--n_iterations",
+  default = 50000,
+  type = "integer"
 )
 parser$add_argument(
-    "-c", "--cores",
-    default = 1,
-    type = "integer"
+  "-c", "--cores",
+  default = 1,
+  type = "integer"
 )
 parser$add_argument(
-    "-s", "--seed",
-    default = 42,
-    type = "integer"
+  "-s", "--seed",
+  default = 42,
+  type = "integer"
 )
 parser$add_argument(
-    "-g", "--gene",
-    default = "ENSG00000130363", ## nogt
-    # default = "ENSG00000025708", ## gt
-    type = "character"
+  "-g", "--gene",
+  default = "ENSG00000130363", ## nogt
+  # default = "ENSG00000025708", ## gt
+  type = "character"
 )
 parser$add_argument(
-    "-t", "--tolerance",
-    default = 1e-3,
-    type = "double"
+  "-t", "--tolerance",
+  default = 1e-3,
+  type = "double"
 )
 
 args <- parser$parse_args()
@@ -70,44 +70,43 @@ snps <- get_snps(gene_data)
 
 use <- 1:min(10, length(snps))
 res <- parallel::mclapply(snps[use],
-    function(snp) {
-        types <- c("meanfield", "fullrank")
-        set.seed(seed)
-        out <- lapply(types,
-            function(type) {
-                cat("Running", snp, type, "\n")
-                tab <- fit_fun(
-                    gene_data = gene_data,
-                    gene = gene,
-                    snp = snp,
-                    covariates = covariates,
-                    method = method,
-                    algorithm = type,
-                    summarise_posterior = FALSE,
-                    tol = tol
-                )
-                tab
-            }
+  function(snp) {
+    types <- c("meanfield", "fullrank")
+    set.seed(seed)
+    out <- lapply(
+      types,
+      function(type) {
+        cat("Running", snp, type, "\n")
+        tab <- fit_fun(
+          gene_data = gene_data,
+          gene = gene,
+          snp = snp,
+          covariates = covariates,
+          method = method,
+          algorithm = type,
+          summarise_posterior = FALSE,
+          tol = tol
         )
-        names(out) <- types
-        out[["hmc"]] <- fit_fun(
-            gene_data = gene_data,
-            gene = gene,
-            snp = snp,
-            covariates = covariates,
-            method = "sampling",
-            summarise_posterior = FALSE,
-            cores = 1,
-            tol = tol
-        )
-        out
-    }, mc.cores = args[["cores"]]
+        tab
+      }
+    )
+    names(out) <- types
+    out[["hmc"]] <- fit_fun(
+      gene_data = gene_data,
+      gene = gene,
+      snp = snp,
+      covariates = covariates,
+      method = "sampling",
+      summarise_posterior = FALSE,
+      cores = 1,
+      tol = tol
+    )
+    out
+  },
+  mc.cores = args[["cores"]]
 )
 names(res) <- snps[use]
 saveRDS(res, sprintf("rds/%s/%s/meanfield/%s_s%d.rds", model, mtol, gene, seed))
 
 
 cat("Done!\n")
-
-
-

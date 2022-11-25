@@ -106,6 +106,9 @@ rule process:
         Rscript src/process-files.R -i vb -m {wildcards.model} -t {wildcards.tol}
         """
 
+# rule discrepant:
+            # sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
+
 rule process_components:
     resources: runtime="02:00:00"
     input:

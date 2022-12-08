@@ -71,7 +71,8 @@ if (model == "GT") {
         colnames(out),
         c(
           "n_eff", "Rhat", "niter", "converged", "null.99",
-          "gene", "time", "snp", "variable", "seed", "PEP"
+          "gene", "time", "snp", "variable", "seed", "PEP",
+          "rbias"
         )
       )
       out[, cn] <- out[, cn] / log(2)
@@ -143,7 +144,7 @@ if (model == "GT") {
       n_hom = sum(abs(inp1$gase) == 2)
     )
   }
-  dfs <- lapply(
+  dfs <- bplapply(
     # dfs <- lapply(
     1:length(genes),
     function(i) {
@@ -165,10 +166,12 @@ if (model == "GT") {
         out
       })
       out <- do.call(rbind, outs)
+      ## should figure out why the non-rbias part is so horrible
+      out <- out[out$rbias, ]
 
       cn <- setdiff(
         colnames(out),
-        c("n_eff", "Rhat", "null.99", "gene", "time", "snp", "condition", "variable", "seed", "PEP")
+        c("n_eff", "Rhat", "null.99", "gene", "time", "snp", "condition", "variable", "seed", "PEP", "rbias")
       )
       out[, cn] <- out[, cn] / log(2)
 

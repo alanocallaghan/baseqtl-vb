@@ -229,7 +229,7 @@ fit_stan_noGT <- function(gene_data,
                           method = c("vb", "sampling", "optimizing", "pathfinder", "pathfinder_parallel"),
                           tol = 1e-2,
                           vars = "bj",
-                          model = baseqtl:::stanmodels$noGT_nb_ase,
+                          model = NULL,
                           probs = seq(0.005, 0.995, by = 0.005),
                           summarise_posterior = TRUE,
                           seed = 42,
@@ -250,11 +250,14 @@ fit_stan_noGT <- function(gene_data,
       data$sdP <- c(0.0436991990773286, 0.34926955206545, 0.4920048983496)
       data$mixP <- c(-0.0460439385014068, -3.50655789731998, -4.19970507787993)
 
-      ## ignoring this for the time being
-      # model <- baseqtl:::stanmodels$noGT_nb_ase
-      # if (!is.null(data$ai0)) {
-      #     model <- baseqtl:::stanmodels$noGT_nb_ase_refbias
-      # }
+      rbias <- NULL
+      if (is.null(model)) {
+        model <- baseqtl:::stanmodels$noGT_nb_ase
+        rbias <- !is.null(data$ai0)
+        if (!is.null(data$ai0)) {
+            model <- baseqtl:::stanmodels$noGT_nb_ase_refbias
+        }
+      }
 
       if (identical(init, "opt")) {
         opt_pars <- optimizing(model, data = data, hessian = TRUE)
@@ -293,6 +296,7 @@ fit_stan_noGT <- function(gene_data,
       tab$time <- time[["elapsed"]]
       tab$snp <- snp
       tab$condition <- condition
+      tab$rbias <- rbias
       tab
     }
   )

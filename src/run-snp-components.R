@@ -4,29 +4,29 @@ library("rstan")
 
 parser <- ArgumentParser()
 parser$add_argument(
-  "-m", "--model",
-  default = "GT",
-  type = "character"
+    "-m", "--model",
+    default = "GT",
+    type = "character"
 )
 parser$add_argument(
-  "-i", "--inference",
-  default = "vb",
-  type = "character"
+    "-i", "--inference",
+    default = "vb",
+    type = "character"
 )
 parser$add_argument(
-  "-n", "--n_iterations",
-  default = 50000,
-  type = "double"
+    "-n", "--n_iterations",
+    default = 50000,
+    type = "double"
 )
 parser$add_argument(
-  "-g", "--gene",
-  default = "ENSG00000128311",
-  type = "character"
+    "-g", "--gene",
+    default = "ENSG00000128311",
+    type = "character"
 )
 parser$add_argument(
-  "-t", "--tolerance",
-  default = 1e-3,
-  type = "double"
+    "-t", "--tolerance",
+    default = 1e-3,
+    type = "double"
 )
 
 args <- parser$parse_args()
@@ -51,32 +51,32 @@ snps <- get_snps(gene_data)
 
 
 res <- lapply(
-  snps,
-  function(snp) {
-    file <- sprintf("rds/%s/components/%s/%s_%s.rds", model, mtol, gene, snp)
-    # if (file.exists(file)) return()
-    tabs <- list()
-    for (component in components) {
-      modfile <- sprintf("src/stan/%s_nb_ase_refbias_%s.stan", model, component)
-      mod <- stan_model(modfile)
+    snps,
+    function(snp) {
+        file <- sprintf("rds/%s/components/%s/%s_%s.rds", model, mtol, gene, snp)
+        # if (file.exists(file)) return()
+        tabs <- list()
+        for (component in components) {
+            modfile <- sprintf("src/stan/%s_nb_ase_refbias_%s.stan", model, component)
+            mod <- stan_model(modfile)
 
-      tabs[[component]] <- fit_fun(
-        gene_data = gene_data,
-        gene = gene,
-        snp = snp,
-        model = mod,
-        covariates = covariates,
-        method = method
-      )
+            tabs[[component]] <- fit_fun(
+                gene_data = gene_data,
+                gene = gene,
+                snp = snp,
+                model = mod,
+                covariates = covariates,
+                method = method
+            )
+        }
+        tab <- do.call(rbind, tabs)
+        dir.create(
+            sprintf("rds/%s/components/%s/", model, mtol),
+            showWarnings = FALSE,
+            recursive = TRUE
+        )
+        # saveRDS(tab, file)
     }
-    tab <- do.call(rbind, tabs)
-    dir.create(
-      sprintf("rds/%s/components/%s/", model, mtol),
-      showWarnings = FALSE,
-      recursive = TRUE
-    )
-    # saveRDS(tab, file)
-  }
 )
 file <- sprintf("rds/%s/components/%s/%s.rds", model, mtol, gene)
 cat(file, "\n")

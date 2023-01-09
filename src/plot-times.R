@@ -497,7 +497,7 @@ ggsave(
 
 dord <- order(abs(mdf_filtered_outliers$discrepancy))
 mdf_dord <- mdf_filtered_outliers[dord, ]
-pd1 <- ggplot(mdford) +
+pd1 <- ggplot(mdf_dord) +
     aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
     geom_abline(
         slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"
@@ -511,7 +511,7 @@ pd1 <- ggplot(mdford) +
 
 rdord <- order(abs(mdf_filtered_outliers$relative_discrepancy))
 mdf_rdord <- mdf_filtered_outliers[rdord, ]
-pd2 <- ggplot() +
+pd2 <- ggplot(mdf_rdord) +
     aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
     geom_abline(
         slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"

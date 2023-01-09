@@ -169,13 +169,15 @@ if (model == "GT") {
             outs <- lapply(outs, function(x) {
                 out <- as.data.frame(do.call(rbind, x))
                 if (method == "vb") {
-                    out$niter <- sapply(x, function(y) max(attr(y, "elbo")[[1]]))
+                    out$niter <- sapply(x,
+                        function(y) max(attr(y, "elbo")[[1]])
+                    )
                 }
                 out
             })
             out <- do.call(rbind, outs)
             ## should figure out why the non-rbias part is so horrible
-            out <- out[out$rbias, ]
+            # out <- out[out$rbias, ]
 
             cn <- setdiff(
                 colnames(out),

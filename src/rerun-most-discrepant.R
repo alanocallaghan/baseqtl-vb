@@ -221,31 +221,3 @@ if (!file.exists(f <- sprintf("rds/%s_rerun_discrepant_full.rds", model))) {
     rerun_df <- do.call(rbind, rerun_hmc)
     saveRDS(rerun_df, f)
 }
-
-
-
-if (model == "noGT" & !file.exists("rds/noGT_worst_newmod.rds")) {
-    newmod <- stan_model("src/stan/noGT_nb_ase.stan")
-    gene_data <- get_gene_data(top_newd$gene[[1]], model)
-
-    retry_newmod <- replicate(n_replicates,
-        {
-            d <- fit_fun(
-                gene_data,
-                top_newd$snp[[1]],
-                gene = top_newd$gene[[1]],
-                init = "random",
-                model = newmod,
-                vars = NULL
-            )
-            d <- d[d$condition == top_newd$condition[[1]], ]
-            d <- d[, !grepl("%", colnames(d))]
-            d$param <- gsub("1$", "", rownames(d))
-            d
-        },
-        simplify = FALSE
-    )
-    newmod_df <- do.call(rbind, retry_newmod)
-    saveRDS(newmod_df, "rds/noGT_worst_newmod.rds")
-}
-# newmod_df <- readRDS("rds/noGT_worst_newmod.rds")

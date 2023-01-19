@@ -395,12 +395,13 @@ fit_mod <- function(model, gene, snp, condition, method = "sampling", stanmodel 
 }
 
 plot_with_legend_below <- function(...,
-                                                                     rel_heights = if (common_x) c(0.85, 0.05, 0.15) else c(0.85, 0.15),
-                                                                     common_x = FALSE,
-                                                                     nrow = 1,
-                                                                     labels = "AUTO",
-                                                                     align = "h",
-                                                                     xlab) {
+        rel_heights = if (common_x) c(0.85, 0.05, 0.15) else c(0.85, 0.15),
+        common_x = FALSE,
+        nrow = 1,
+        labels = "AUTO",
+        align = "h",
+        xlab
+    ) {
     legends <- lapply(list(...), cowplot::get_legend)
     plots <- list(...)
     # if (!all(sapply(legends, function(x) identical(x$grobs, legends[[1]]$grobs)))) {

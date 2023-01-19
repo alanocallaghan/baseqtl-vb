@@ -135,7 +135,6 @@ saveRDS(
 )
 
 
-
 lab_str <- "HMC: %s\nADVI: %s\n"
 df_vb_hmc$nullstr99 <- sprintf(
     lab_str,
@@ -157,7 +156,7 @@ scale <- scale_colour_manual(
         null_levs
     ),
     drop = TRUE,
-    name = "Significance"
+    name = "Significant"
 )
 df_vb_hmc$nullstr99 <- factor(df_vb_hmc$nullstr99, levels = null_ord)
 
@@ -181,10 +180,10 @@ gp99 <- ggplot(mdf_nullord) +
     scale +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
-ggsave(
-    sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
-    width = 5, height = 5
-)
+# ggsave(
+#     sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
+#     width = 5, height = 5
+# )
 make_crosstab(
     x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
     y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),
@@ -216,7 +215,6 @@ ind_discord <- !(mdf_filtered_outliers$null.99.hmc == mdf_filtered_outliers$null
 mdf_discordant <- mdf_filtered_outliers[ind_discord, ]
 
 
-
 gpd99 <- ggplot(mdf_discordant) +
     aes(mean.hmc, mean.vb, colour = nullstr99) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
@@ -230,7 +228,6 @@ ggsave(
     sprintf("%s/%s/estimates/point-estimates-diff-99.pdf", fpath, model),
     width = 5, height = 5
 )
-
 
 
 g <- plot_with_legend_below(
@@ -260,7 +257,7 @@ g <- plot_with_legend_below(
 
 ggsave(
     sprintf("%s/%s/estimates/point-estimates-both-99.pdf", fpath, model),
-    width = 6, height = 4
+    width = 5.5, height = 3.5
 )
 
 
@@ -296,50 +293,25 @@ time_vb <- sapply(
     }
 )
 gtime <- ggplot() +
-    aes(sens_vb, time_vb) +
+    aes(sens_vb, time_vb / 3600) +
     geom_line() +
     geom_hline(
-        yintercept = sum(df_vb_hmc$time.hmc),
+        yintercept = sum(df_vb_hmc$time.hmc) / 3600,
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = 0.96,
-        y = sum(df_vb_hmc$time.hmc),
-        label = "Total time without screening",
+        y = sum(df_vb_hmc$time.hmc) / 3600,
+        label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
-    ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb)) +
-    labs(x = "Sensitivity", y = "Total time (s)")
-ggsave(
-    sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, level),
-    width = 5, height = 5
-)
-ggsave(
-    sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, level),
-    width = 3.5, height = 4
-)
-
-g <- ggplot() +
-    aes(spec_vb, time_vb) +
-    geom_line() +
-    geom_hline(
-        yintercept = sum(df_vb_hmc$time.hmc),
-        linetype = "dashed"
-    ) +
-    annotate(
-        geom = "text",
-        x = median(spec_vb),
-        y = sum(df_vb_hmc$time.hmc),
-        label = "Total time without screening",
-        vjust = -0.2,
-    ) +
-    labs(x = "Specificity", y = "Total time (s)") +
-    ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb))
-ggsave(
-    sprintf("%s/%s/time/time_vs_spec_vb_%s.pdf", fpath, model, level),
-    width = 5, height = 5
-)
+    ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb) / 3600) +
+    labs(x = "Sensitivity", y = "Total time (hr)")
+# ggsave(
+#     sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, level),
+#     width = 5, height = 5
+# )
 
 prob <- df_vb_hmc[["PEP.vb"]] %||% df_vb_hmc[["PEP"]]
 pred_vb <- prediction(
@@ -347,26 +319,12 @@ pred_vb <- prediction(
     labels = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE))
 )
 
+
 perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
 perf_aupr_vb <- performance(pred_vb, "aucpr")@y.values[[1]]
 perf_pr_vb <- performance(pred_vb, "prec", "rec")
 perf_roc_vb <- performance(pred_vb, "tpr", "fpr")
 
-g <- ggplot() +
-    geom_path(
-        aes(
-            perf_pr_vb@x.values[[1]], perf_pr_vb@y.values[[1]]
-        )
-    ) +
-    lims(x = 0:1, y = 0:1) +
-    labs(x = "Precision", y = "Recall") +
-    scale_colour_brewer(palette = "Set2", name = NULL) +
-    theme(legend.position = "bottom") +
-    ggtitle(sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb))
-ggsave(
-    sprintf("%s/%s/roc/pr_vb_%s.pdf", fpath, model, level),
-    width = 4, height = 4
-)
 g <- ggplot() +
     geom_path(
         aes(
@@ -391,189 +349,9 @@ ggsave(
 p <- plot_grid(groc, gtime, labels = "AUTO")
 ggsave(
     sprintf("%s/%s/time/time_roc_%s.pdf", fpath, model, level),
-    width = 6, height = 3
+    width = 5.5, height = 3
 )
 
-
-
-
-
-################################################################################
-## Unused graphs
-################################################################################
-
-
-## time comparison
-g <- ggplot(df_vb_hmc) +
-    aes(time.hmc, time.vb) +
-    geom_pointdensity(shape = 16, size = 0.8) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-    scale_x_log10() +
-    scale_y_log10() +
-    scale_colour_viridis() +
-    theme(legend.position = "none") +
-    labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
-ggsave(
-    sprintf("%s/%s/time/time_hmc_vs_vb.pdf", fpath, model),
-    width = 5, height = 5
-)
-
-cn <- lapply(dfs, colnames)
-cn <- Reduce(intersect, cn)
-dfs_int <- lapply(dfs, function(x) x[, cn])
-dfs_int[] <- lapply(
-    names(dfs_int),
-    function(n) {
-        dfs_int[[n]]$method <- n
-        dfs_int[[n]]
-    }
-)
-df_int <- do.call(rbind, dfs_int)
-
-
-g <- ggplot(df_int) +
-    aes(x = time, colour = method) +
-    geom_density() +
-    geom_vline(
-        aes(
-            xintercept = mean(time[method == "vb"]),
-            colour = "vb"
-        ),
-        linetype = "dashed"
-    ) +
-    geom_vline(
-        aes(
-            xintercept = mean(time[method == "sampling"]),
-            colour = "sampling"
-        ),
-        linetype = "dashed"
-    ) +
-    scale_x_log10(name = "Time (s)") +
-    scale_colour_brewer(palette = "Set1", name = "Method") +
-    ylab("Density") +
-    theme(legend.position = "bottom")
-ggsave(
-    sprintf("%s/%s/time/time_comparison.pdf", fpath, model),
-    width = 5, height = 5
-)
-
-
-## comparing absolute and relative differences
-mdf_filtered_outliers <- df_vb_hmc[abs(df_vb_hmc$mean.vb) < 2, ]
-lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
-
-seqr <- seq(lim[[1]], lim[[2]], length.out = 200)
-grid <- expand.grid(x = seqr, y = seqr)
-grid$absdiff <- sapply(seq_len(nrow(grid)), function(i) {
-    abs(grid[i, 1] - grid[i, 2])
-})
-grid$reldiff1 <- sapply(seq_len(nrow(grid)), function(i) {
-    abs((grid[i, 1] - grid[i, 2]) / ((grid[i, 1] + grid[i, 2]) / 2))
-})
-grid$reldiff2 <- sapply(seq_len(nrow(grid)), function(i) {
-    abs((grid[i, 1] - grid[i, 2]) / grid[i, 1])
-})
-ga <- ggplot(grid) +
-    aes(x = x, y = y, fill = absdiff) +
-    geom_tile() +
-    scale_fill_viridis(name = "Absolute difference") +
-    theme(legend.position = "bottom")
-gr1 <- ggplot(grid) +
-    aes(x = x, y = y, fill = reldiff1) +
-    geom_tile() +
-    scale_fill_viridis(name = "Relative (to mean) absolute difference") +
-    theme(legend.position = "bottom")
-gr2 <- ggplot(grid) +
-    aes(x = x, y = y, fill = reldiff2) +
-    geom_tile() +
-    scale_fill_viridis(name = "Relative (to x) absolute difference") +
-    theme(legend.position = "bottom")
-
-pp <- cowplot::plot_grid(ga, gr1, gr2, nrow = 1, labels = "AUTO")
-ggsave(
-    sprintf("%s/%s/estimates/abs-rel-diff-comp.pdf", fpath, model),
-    width = 18, height = 6
-)
-
-dord <- order(abs(mdf_filtered_outliers$discrepancy))
-mdf_dord <- mdf_filtered_outliers[dord, ]
-pd1 <- ggplot(mdf_dord) +
-    aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
-    geom_abline(
-        slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"
-    ) +
-    geom_point(shape = 16, size = 0.5, alpha = 0.7) +
-    lims(x = lim, y = lim) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    scale_colour_viridis(name = "Absolute difference") +
-    guides(colour = guide_legend(override.aes = list(size = 2))) +
-    theme(legend.position = "bottom")
-
-rdord <- order(abs(mdf_filtered_outliers$relative_discrepancy))
-mdf_rdord <- mdf_filtered_outliers[rdord, ]
-pd2 <- ggplot(mdf_rdord) +
-    aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
-    geom_abline(
-        slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"
-    ) +
-    geom_point(shape = 16, size = 0.75, alpha = 0.7) +
-    lims(x = lim, y = lim) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    scale_colour_viridis(name = "Relative absolute difference", trans = "log10") +
-    guides(colour = guide_legend(override.aes = list(size = 2))) +
-    theme(legend.position = "bottom")
-pp <- cowplot::plot_grid(pd1, pd2, labels = "AUTO")
-ggsave(
-    sprintf("%s/%s/estimates/point-estimates-rel-abs-disc.pdf", fpath, model),
-    width = 12, height = 6
-)
-
-
-## point estimates with HPD shown
-mdf_discordant <- mdf_discordant %>% mutate(
-    hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
-    hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
-    hpd_width_ratio = hpd_width_hmc / hpd_width_vb
-)
-
-limv <- range(c(
-    mdf_discordant[["0.5%.hmc"]], mdf_discordant[["99.5%.hmc"]],
-    mdf_discordant[["0.5%.vb"]], mdf_discordant[["99.5%.vb"]]
-))
-g <- ggplot(mdf_discordant) +
-    geom_pointrange(
-        aes(
-            x = mean.hmc,
-            xmin = `0.5%.hmc`,
-            xmax = `99.5%.hmc`,
-            colour = nullstr99,
-            y = mean.vb
-        ),
-        alpha = 0.2,
-        fatten = 1,
-        pch = 16
-    ) +
-    geom_pointrange(
-        aes(
-            x = mean.hmc,
-            y = mean.vb,
-            ymin = `0.5%.vb`,
-            colour = nullstr99,
-            ymax = `99.5%.vb`
-        ),
-        alpha = 0.2,
-        fatten = 1,
-        pch = 16
-    ) +
-    lims(x = limv, y = limv) +
-    labs(x = "HMC estimate", y = "ADVI estimate") +
-    theme(legend.position = "below") +
-    # guides(colour = guide_legend(override.aes = list(size = 2))) +
-    scale
-ggsave(
-    sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
-    width = 4, height = 4
-)
 
 print("Success!")
 
@@ -586,8 +364,223 @@ print("Success!")
 
 
 
+################################################################################
+## Unused graphs
+################################################################################
 
 
+# ## time comparison
+# g <- ggplot(df_vb_hmc) +
+#     aes(time.hmc, time.vb) +
+#     geom_pointdensity(shape = 16, size = 0.8) +
+#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+#     scale_x_log10() +
+#     scale_y_log10() +
+#     scale_colour_viridis() +
+#     theme(legend.position = "none") +
+#     labs(x = "Time (s) for HMC", y = "Time (s) for ADVI")
+# ggsave(
+#     sprintf("%s/%s/time/time_hmc_vs_vb.pdf", fpath, model),
+#     width = 5, height = 5
+# )
+
+# cn <- lapply(dfs, colnames)
+# cn <- Reduce(intersect, cn)
+# dfs_int <- lapply(dfs, function(x) x[, cn])
+# dfs_int[] <- lapply(
+#     names(dfs_int),
+#     function(n) {
+#         dfs_int[[n]]$method <- n
+#         dfs_int[[n]]
+#     }
+# )
+# df_int <- do.call(rbind, dfs_int)
+
+
+# g <- ggplot(df_int) +
+#     aes(x = time, colour = method) +
+#     geom_density() +
+#     geom_vline(
+#         aes(
+#             xintercept = mean(time[method == "vb"]),
+#             colour = "vb"
+#         ),
+#         linetype = "dashed"
+#     ) +
+#     geom_vline(
+#         aes(
+#             xintercept = mean(time[method == "sampling"]),
+#             colour = "sampling"
+#         ),
+#         linetype = "dashed"
+#     ) +
+#     scale_x_log10(name = "Time (s)") +
+#     scale_colour_brewer(palette = "Set1", name = "Method") +
+#     ylab("Density") +
+#     theme(legend.position = "bottom")
+# ggsave(
+#     sprintf("%s/%s/time/time_comparison.pdf", fpath, model),
+#     width = 5, height = 5
+# )
+
+
+# ## comparing absolute and relative differences
+# mdf_filtered_outliers <- df_vb_hmc[abs(df_vb_hmc$mean.vb) < 2, ]
+# lim <- range(c(mdf_filtered_outliers$mean.hmc, mdf_filtered_outliers$mean.vb))
+
+
+
+# ## point estimates with HPD shown
+# mdf_discordant <- mdf_discordant %>% mutate(
+#     hpd_width_hmc = `99.5%.hmc` - `0.5%.hmc`,
+#     hpd_width_vb = `99.5%.vb` - `0.5%.vb`,
+#     hpd_width_ratio = hpd_width_hmc / hpd_width_vb
+# )
+
+# limv <- range(c(
+#     mdf_discordant[["0.5%.hmc"]], mdf_discordant[["99.5%.hmc"]],
+#     mdf_discordant[["0.5%.vb"]], mdf_discordant[["99.5%.vb"]]
+# ))
+# g <- ggplot(mdf_discordant) +
+#     geom_pointrange(
+#         aes(
+#             x = mean.hmc,
+#             xmin = `0.5%.hmc`,
+#             xmax = `99.5%.hmc`,
+#             colour = nullstr99,
+#             y = mean.vb
+#         ),
+#         alpha = 0.2,
+#         fatten = 1,
+#         pch = 16
+#     ) +
+#     geom_pointrange(
+#         aes(
+#             x = mean.hmc,
+#             y = mean.vb,
+#             ymin = `0.5%.vb`,
+#             colour = nullstr99,
+#             ymax = `99.5%.vb`
+#         ),
+#         alpha = 0.2,
+#         fatten = 1,
+#         pch = 16
+#     ) +
+#     lims(x = limv, y = limv) +
+#     labs(x = "HMC estimate", y = "ADVI estimate") +
+#     theme(legend.position = "below") +
+#     # guides(colour = guide_legend(override.aes = list(size = 2))) +
+#     scale
+# ggsave(
+#     sprintf("%s/%s/estimates/point-estimates-hpd-99.pdf", fpath, model),
+#     width = 4, height = 4
+# )
+
+
+# seqr <- seq(lim[[1]], lim[[2]], length.out = 200)
+# grid <- expand.grid(x = seqr, y = seqr)
+# grid$absdiff <- sapply(seq_len(nrow(grid)), function(i) {
+#     abs(grid[i, 1] - grid[i, 2])
+# })
+# grid$reldiff1 <- sapply(seq_len(nrow(grid)), function(i) {
+#     abs((grid[i, 1] - grid[i, 2]) / ((grid[i, 1] + grid[i, 2]) / 2))
+# })
+# grid$reldiff2 <- sapply(seq_len(nrow(grid)), function(i) {
+#     abs((grid[i, 1] - grid[i, 2]) / grid[i, 1])
+# })
+# ga <- ggplot(grid) +
+#     aes(x = x, y = y, fill = absdiff) +
+#     geom_tile() +
+#     scale_fill_viridis(name = "Absolute difference") +
+#     theme(legend.position = "bottom")
+# gr1 <- ggplot(grid) +
+#     aes(x = x, y = y, fill = reldiff1) +
+#     geom_tile() +
+#     scale_fill_viridis(name = "Relative (to mean) absolute difference") +
+#     theme(legend.position = "bottom")
+# gr2 <- ggplot(grid) +
+#     aes(x = x, y = y, fill = reldiff2) +
+#     geom_tile() +
+#     scale_fill_viridis(name = "Relative (to x) absolute difference") +
+#     theme(legend.position = "bottom")
+
+# pp <- cowplot::plot_grid(ga, gr1, gr2, nrow = 1, labels = "AUTO")
+# ggsave(
+#     sprintf("%s/%s/estimates/abs-rel-diff-comp.pdf", fpath, model),
+#     width = 18, height = 6
+# )
+
+
+# dord <- order(abs(mdf_filtered_outliers$discrepancy))
+# mdf_dord <- mdf_filtered_outliers[dord, ]
+# pd1 <- ggplot(mdf_dord) +
+#     aes(mean.hmc, mean.vb, colour = abs(discrepancy)) +
+#     geom_abline(
+#         slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"
+#     ) +
+#     geom_point(shape = 16, size = 0.5, alpha = 0.7) +
+#     lims(x = lim, y = lim) +
+#     labs(x = "HMC estimate", y = "ADVI estimate") +
+#     scale_colour_viridis(name = "Absolute difference") +
+#     guides(colour = guide_legend(override.aes = list(size = 2))) +
+#     theme(legend.position = "bottom")
+
+# rdord <- order(abs(mdf_filtered_outliers$relative_discrepancy))
+# mdf_rdord <- mdf_filtered_outliers[rdord, ]
+# pd2 <- ggplot(mdf_rdord) +
+#     aes(mean.hmc, mean.vb, colour = abs(relative_discrepancy)) +
+#     geom_abline(
+#         slope = 1, intercept = 0, linetype = "dashed", colour = "grey80"
+#     ) +
+#     geom_point(shape = 16, size = 0.75, alpha = 0.7) +
+#     lims(x = lim, y = lim) +
+#     labs(x = "HMC estimate", y = "ADVI estimate") +
+#     scale_colour_viridis(name = "Relative absolute difference", trans = "log10") +
+#     guides(colour = guide_legend(override.aes = list(size = 2))) +
+#     theme(legend.position = "bottom")
+# pp <- cowplot::plot_grid(pd1, pd2, labels = "AUTO")
+# ggsave(
+#     sprintf("%s/%s/estimates/point-estimates-rel-abs-disc.pdf", fpath, model),
+#     width = 12, height = 6
+# )
+
+# g <- ggplot() +
+#     aes(spec_vb, time_vb) +
+#     geom_line() +
+#     geom_hline(
+#         yintercept = sum(df_vb_hmc$time.hmc),
+#         linetype = "dashed"
+#     ) +
+#     annotate(
+#         geom = "text",
+#         x = median(spec_vb),
+#         y = sum(df_vb_hmc$time.hmc) / 3600,
+#         label = "Total time\nwithout screening",
+#         vjust = -0.2,
+#     ) +
+#     labs(x = "Specificity", y = "Total time (hr)") +
+#     ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb))
+# ggsave(
+#     sprintf("%s/%s/time/time_vs_spec_vb_%s.pdf", fpath, model, level),
+#     width = 5, height = 5
+# )
+
+
+# g <- ggplot() +
+#     geom_path(
+#         aes(
+#             perf_pr_vb@x.values[[1]], perf_pr_vb@y.values[[1]]
+#         )
+#     ) +
+#     lims(x = 0:1, y = 0:1) +
+#     labs(x = "Precision", y = "Recall") +
+#     scale_colour_brewer(palette = "Set2", name = NULL) +
+#     theme(legend.position = "bottom") +
+#     ggtitle(sprintf("ADVI; AUPRC: %0.3f", perf_aupr_vb))
+# ggsave(
+#     sprintf("%s/%s/roc/pr_vb_%s.pdf", fpath, model, level),
+#     width = 4, height = 4
+# )
 
 
 
@@ -727,3 +720,4 @@ print("Success!")
 #         width = 5, height = 5
 #     )
 # }
+

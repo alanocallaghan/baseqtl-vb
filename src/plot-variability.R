@@ -234,7 +234,7 @@ g1 <- ggplot(perf_df) +
     annotate(
         label = paste0("AUC = ", paste(round(range(perf_df$auroc), digits = 3), collapse = "-")),
         geom = "text",
-        x = 0.7,
+        x = 0.6,
         y = 0.5
     )
 ggsave(sprintf("%s/%s/variability/roc.pdf", fpath, model), width = 3.5, height = 3.5)
@@ -288,28 +288,28 @@ hmctimes <- dfs$sampling$time
 
 
 g2 <- ggplot(time_df) +
-    aes(sens, time, colour = factor(seed)) +
+    aes(sens, time / 3600, colour = factor(seed)) +
     geom_path() +
     scale_colour_brewer(palette = "Accent", name = NULL, guide = "none") +
     geom_hline(
-        yintercept = sum(hmctimes),
+        yintercept = sum(hmctimes) / 3600,
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = mean(range(time_df$sens)),
-        y = sum(hmctimes),
-        label = "Total time without screening",
+        y = sum(hmctimes) / 3600,
+        label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
     ylim(0, max(sum(hmctimes), time_df$time)) +
     # scale_y_log10() +
-    labs(x = "Sensitivity", y = "Total time (s)")
+    labs(x = "Sensitivity", y = "Total time (hr)")
 ggsave(sprintf("%s/%s/variability/time-pep.pdf", fpath, model), width = 3.5, height = 3.5)
 # ggsave("tmp.pdf")
 
 plot_grid(g1, g2, labels = "AUTO")
-ggsave(sprintf("%s/%s/variability/time-roc-pep.pdf", fpath, model), width = 7, height = 3.5)
+ggsave(sprintf("%s/%s/variability/time-roc-pep.pdf", fpath, model), width = 5.5, height = 3)
 
 time_dfs_levs <- lapply(
     unique(df_vb_hmc$seed.vb),
@@ -354,23 +354,23 @@ time_df_levs <- do.call(rbind, time_dfs_levs)
 
 
 g <- ggplot(time_df_levs) +
-    aes(sens, time, colour = factor(seed)) +
+    aes(sens, time / 3600, colour = factor(seed)) +
     geom_path() +
     scale_colour_brewer(palette = "Accent", name = NULL, guide = "none") +
     geom_hline(
-        yintercept = sum(hmctimes),
+        yintercept = sum(hmctimes) / 3600,
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = mean(range(time_df_levs$sens)),
-        y = sum(hmctimes),
-        label = "Total time without screening",
+        y = sum(hmctimes) / 3600,
+        label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
-    ylim(0, max(sum(hmctimes), time_df$time)) +
+    ylim(0, max(sum(hmctimes), time_df$time) / 3600) +
     # scale_y_log10() +
-    labs(x = "Sensitivity", y = "Total time (s)")
+    labs(x = "Sensitivity", y = "Total time (hr)")
 ggsave(sprintf("%s/%s/variability/time-levs.pdf", fpath, model), width = 3.5, height = 3.5)
 
 # ggsave("tmp2.png")

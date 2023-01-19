@@ -30,7 +30,9 @@ rule all:
         expand(
             "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf",
             tol = tols
-        )
+        ),
+        "fig_{tol}/{model}/diag/full-posteriors-slab.pdf"
+
 
 rule plots:
     resources: runtime="02:00:00"
@@ -54,7 +56,36 @@ rule plots:
         # Rscript ./src/plot-components.R -m GT -t {wildcards.tol}
         """
 
+rule rerun_discrepant:
+    resources: runtime="04:00:00", mem_mb=20000
+    input:
+        "rds/{model}_discrepancies_vb_1e-02.rds"
+    output:
+        "rds/{model}_rerun_discrepant_full.rds"
+    shell:
+        """
+        Rscript src/rerun-most-discrepant.R -m {wildcards.model}
+        """
+
+rule plot_discrepant:
+    resources: runtime="04:00:00", mem_mb=20000
+    input:
+        "rds/{model}_rerun_discrepant_full.rds"
+    output:
+        "fig_{tol}/{model}/diag/full-posteriors-slab.pdf",
+        "fig_{tol}/{model}/diag/most_discrepant_method_comp_prior.pdf"
+        
+    shell:
+        """
+        Rscript src/plot-discrepancy-posteriors.R -m {wildcards.model} -t {wildcards.tol}
+        Rscript src/plot-discrepancy-sources.R -m {wildcards.model} -t {wildcards.tol}
+        Rscript src/plot-discrepancy-misc.R -m {wildcards.model} -t {wildcards.tol}
+        """
+
+
 rule plot_meanfield:
+    resources: runtime="04:00:00", mem_mb=50000
+    threads: 8
     input:
         [
             expand(
@@ -65,12 +96,13 @@ rule plot_meanfield:
             ) for mod in models
         ]
     output:
-        "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf",
-        "fig_{tol}/noGT/diag/KS-meanfield-fullrank.pdf"
+        "fig_{tol}/GT/diag/KS-meanfield-fullrank.pdf"
+        # ,
+        # "fig_{tol}/noGT/diag/KS-meanfield-fullrank.pdf"
     shell:
         """
         Rscript ./src/plot-meanfield.R -m GT
-        Rscript ./src/plot-meanfield.R -m noGT
+        # Rscript ./src/plot-meanfield.R -m noGT
         """
 
 rule process:
@@ -106,8 +138,17 @@ rule process:
         Rscript src/process-files.R -i vb -m {wildcards.model} -t {wildcards.tol}
         """
 
-# rule discrepant:
-            # sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
+rule discrepant:
+    threads: 8
+    resources: runtime="02:00:00", mem_mb=20000
+    output:
+        "fig_{tol}/{model}/diag/full-posteriors-slab.pdf"
+    input:
+        "rds/{model}/vb_{tol}_combined.rds"
+    shell:
+        """
+        Rscript src/analyse-discrepant.R -m {wildcards.model}
+        """
 
 rule process_components:
     resources: runtime="02:00:00"

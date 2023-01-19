@@ -91,7 +91,6 @@ dfm <- dfm %>% mutate(
 )
 
 
-## what the fuck is this?
 top_newd <- dfm[order(-abs(dfm$new_discrepancy)), ]
 top_newd <- top_newd[1:10, ]
 
@@ -206,13 +205,13 @@ gt1 <- rasterise(g1, dpi = 300)
 
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_grid-beta1.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_grid-beta1.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_grid-beta1.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_grid-beta1.pdf",
+        fpath, model
     )
 }
 # ggsave(fname, width = 5, height = 3)
@@ -270,13 +269,13 @@ gt2 <- rasterise(g2, dpi = 300)
 
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_grid-beta2.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_grid-beta2.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_grid-beta2.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_grid-beta2.pdf",
+        fpath, model
     )
 }
 
@@ -334,13 +333,13 @@ gt3 <- rasterise(g3, dpi = 300)
 
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_grid-beta1-beta2.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_grid-beta1-beta2.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_grid-beta1-beta2.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_grid-beta1-beta2.pdf",
+        fpath, model
     )
 }
 # ggsave(file = fname, width = 5, height = 3)
@@ -378,15 +377,16 @@ g_all <- plot_grid(
 )
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_grid-all.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_grid-all.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_grid-all.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_grid-all.pdf",
+        fpath, model
     )
 }
+print(fname)
 ggsave(fname, width = 8, height = 5)
 
 t <- list(
@@ -404,15 +404,16 @@ g_all <- plot_grid(
 )
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_grid-all-rast.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_grid-all-rast.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_grid-all-rast.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_grid-all-rast.pdf",
+        fpath, model
     )
 }
+print(fname)
 ggsave(fname, width = 8, height = 5)
 
 
@@ -434,13 +435,13 @@ g1 <- ggplot() +
     labs(x = TeX("$\\beta_{aFC}$"), y = "Inference\nmethod")
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_method.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_method.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_method.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_method.pdf",
+        fpath, model
     )
 }
 # ggsave(fname, width = 2, height = 3)
@@ -461,13 +462,13 @@ g2 <- ggplot() +
     labs(x = TeX("$\\beta_{aFC}$"), y = "Model")
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_component.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_component.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_component.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_component.pdf",
+        fpath, model
     )
 }
 # ggsave(fname, width = 2, height = 3)
@@ -489,13 +490,13 @@ g3 <- ggplot() +
     labs(x = TeX("$\\beta_{aFC}$"), y = "Model")
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_component_prior.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_component_prior.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_component_prior.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_component_prior.pdf",
+        fpath, model
     )
 }
 # ggsave(fname, width = 2, height = 3)
@@ -509,133 +510,15 @@ p <- plot_grid(g1 + lims, g2 + lims, g3 + lims, ncol = 1, labels = "AUTO", align
 
 fname <- if (model == "GT") {
     sprintf(
-        "%s/%s/diag/%s_%s_method_comp_prior.pdf",
-        fpath, model, mygene, mysnp_clean
+        "%s/%s/diag/most_discrepant_method_comp_prior.pdf",
+        fpath, model
     )
 } else {
     sprintf(
-        "%s/%s/diag/%s_%s_%s_method_comp_prior.pdf",
-        fpath, model, mygene, mysnp_clean, mycondition
+        "%s/%s/diag/most_discrepant_method_comp_prior.pdf",
+        fpath, model
     )
 }
+print(fname)
+cat(mygene, mysnp, mycondition, file = sprintf("%s/%s/diag/worst_gene.txt", fpath, model))
 ggsave(fname, width = 4, height = 5)
-
-
-
-
-
-################################################################################
-## Unused
-################################################################################
-
-
-# if (!file.exists(f <- sprintf("rds/%s_discrepant_%s_fr.rds", model, tol_str))) {
-#     print("rerunning with fullrank")
-#     fr_res <- parallel::mclapply(
-#         seq_len(nrow(df)),
-#         function(i) {
-#             gene_data <- get_gene_data(df[i, "gene"], model)
-#             out <- replicate(
-#                 n_replicates,
-#                 {
-#                     d <- fit_fun(
-#                         gene_data,
-#                         df[i, "snp"],
-#                         gene = df[i, "gene"],
-#                         init = "random",
-#                         algorithm = "fullrank",
-#                         vars = NULL
-#                     )
-#                     d$param <- gsub("1$", "", rownames(d))
-#                     d
-#                 },
-#                 simplify = FALSE
-#             )
-#             do.call(rbind, out)
-#         }
-#     )
-#     fr_df <- do.call(rbind, fr_res)
-#     fr_df$init <- "random"
-#     fr_df$algorithm <- "fullrank"
-#     saveRDS(fr_df, f)
-# }
-
-
-# # maybe split into pointrange by init type?
-# g <- ggplot(dfm) +
-#     aes(abs(discrepancy), abs(new_discrepancy), colour = init) +
-#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-#     geom_jitter(size = 0.5, width = 0.001, height = 0) +
-#     labs(x = "Original discrepancy", y = "New discrepancy") +
-#     scale_colour_brewer(palette = "Set2", name = "Initialisation")
-# ggsave(
-#     sprintf("%s/%s/diag/rerun_discrepant.png", fpath, model),
-#     width = 5, height = 5
-# )
-
-
-# g <- ggplot(dfm) +
-#     aes(init, abs(new_discrepancy)) +
-#     geom_violin(alpha = 0) +
-#     geom_segment(
-#         aes(
-#             x = 0.5, xend = 5,
-#             y = abs(discrepancy), yend = abs(discrepancy),
-#             colour = gene
-#         ),
-#         linetype = "dashed", alpha = 0.7, linewidth = 0.4
-#     ) +
-#     geom_violin() +
-#     geom_boxplot(outlier.colour = NA, width = 0.25) +
-#     geom_jitter(aes(colour = gene), width = 0.25, alpha = 0.3, size = 0.3) +
-#     scale_colour_discrete(name = NULL, guide = "none") +
-#     labs(x = "Initialisation method", y = "abs(discrepancy)")
-# ggsave(
-#     sprintf("%s/%s/diag/init_discrepant.png", fpath, model),
-#     width = 5, height = 5
-# )
-
-
-# g <- ggplot(dfm) +
-#     aes(init, abs(new_discrepancy)) +
-#     geom_violin(alpha = 0) +
-#     geom_segment(
-#         aes(
-#             x = 0.5, xend = 5,
-#             y = abs(discrepancy), yend = abs(discrepancy),
-#             colour = gene
-#         ),
-#         linetype = "dashed", alpha = 0.2, linewidth = 0.4
-#     ) +
-#     geom_violin() +
-#     geom_boxplot(outlier.colour = NA, width = 0.25) +
-#     geom_jitter(aes(colour = gene), width = 0.25, , alpha = 0.3, size = 0.3) +
-#     scale_y_log10() +
-#     scale_colour_discrete(name = NULL, guide = "none") +
-#     labs(x = "Initialisation method", y = "abs(discrepancy)")
-# ggsave(
-#     sprintf("%s/%s/diag/init_discrepant_log.png", fpath, model),
-#     width = 5, height = 5
-# )
-
-
-
-# md_df <- dfm %>%
-#     group_by(gene, snp) %>%
-#     summarise(
-#         new_mabs_disc = mean(abs(new_discrepancy)),
-#         mabs_disc = mean(abs(discrepancy)),
-#         .groups = "drop"
-#     )
-
-# # todo: make this y pointrange
-# g <- ggplot(md_df) +
-#     aes(mabs_disc, new_mabs_disc) +
-#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-#     geom_point() +
-#     labs(x = "New mean absolute discrepancy", y = "Original absolute discrepancy")
-# ggsave(
-#     sprintf("%s/%s/diag/comp-discrepancy.png", fpath, model),
-#     width = 5, height = 5
-# )
-

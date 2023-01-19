@@ -253,3 +253,90 @@ g <- ggplot(df_slabplot) +
     )
 ggsave(sprintf("%s/%s/diag/full-posteriors-slab.pdf", fpath, model), width = 20, height = 5)
 
+
+
+
+
+################################################################################
+## Unused
+################################################################################
+
+
+# # maybe split into pointrange by init type?
+# g <- ggplot(dfm) +
+#     aes(abs(discrepancy), abs(new_discrepancy), colour = init) +
+#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+#     geom_jitter(size = 0.5, width = 0.001, height = 0) +
+#     labs(x = "Original discrepancy", y = "New discrepancy") +
+#     scale_colour_brewer(palette = "Set2", name = "Initialisation")
+# ggsave(
+#     sprintf("%s/%s/diag/rerun_discrepant.png", fpath, model),
+#     width = 5, height = 5
+# )
+
+
+# g <- ggplot(dfm) +
+#     aes(init, abs(new_discrepancy)) +
+#     geom_violin(alpha = 0) +
+#     geom_segment(
+#         aes(
+#             x = 0.5, xend = 5,
+#             y = abs(discrepancy), yend = abs(discrepancy),
+#             colour = gene
+#         ),
+#         linetype = "dashed", alpha = 0.7, linewidth = 0.4
+#     ) +
+#     geom_violin() +
+#     geom_boxplot(outlier.colour = NA, width = 0.25) +
+#     geom_jitter(aes(colour = gene), width = 0.25, alpha = 0.3, size = 0.3) +
+#     scale_colour_discrete(name = NULL, guide = "none") +
+#     labs(x = "Initialisation method", y = "abs(discrepancy)")
+# ggsave(
+#     sprintf("%s/%s/diag/init_discrepant.png", fpath, model),
+#     width = 5, height = 5
+# )
+
+
+# g <- ggplot(dfm) +
+#     aes(init, abs(new_discrepancy)) +
+#     geom_violin(alpha = 0) +
+#     geom_segment(
+#         aes(
+#             x = 0.5, xend = 5,
+#             y = abs(discrepancy), yend = abs(discrepancy),
+#             colour = gene
+#         ),
+#         linetype = "dashed", alpha = 0.2, linewidth = 0.4
+#     ) +
+#     geom_violin() +
+#     geom_boxplot(outlier.colour = NA, width = 0.25) +
+#     geom_jitter(aes(colour = gene), width = 0.25, , alpha = 0.3, size = 0.3) +
+#     scale_y_log10() +
+#     scale_colour_discrete(name = NULL, guide = "none") +
+#     labs(x = "Initialisation method", y = "abs(discrepancy)")
+# ggsave(
+#     sprintf("%s/%s/diag/init_discrepant_log.png", fpath, model),
+#     width = 5, height = 5
+# )
+
+
+
+# md_df <- dfm %>%
+#     group_by(gene, snp) %>%
+#     summarise(
+#         new_mabs_disc = mean(abs(new_discrepancy)),
+#         mabs_disc = mean(abs(discrepancy)),
+#         .groups = "drop"
+#     )
+
+# # todo: make this y pointrange
+# g <- ggplot(md_df) +
+#     aes(mabs_disc, new_mabs_disc) +
+#     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+#     geom_point() +
+#     labs(x = "New mean absolute discrepancy", y = "Original absolute discrepancy")
+# ggsave(
+#     sprintf("%s/%s/diag/comp-discrepancy.png", fpath, model),
+#     width = 5, height = 5
+# )
+

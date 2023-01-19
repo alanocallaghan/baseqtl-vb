@@ -11,6 +11,7 @@ library("transport")
 library("rstan")
 library("ggpointdensity")
 library("viridis")
+library("BiocParallel")
 
 parser <- ArgumentParser()
 parser$add_argument(
@@ -25,7 +26,7 @@ parser$add_argument(
 )
 
 args <- parser$parse_args()
-
+register(MulticoreParam(workers = 8))
 source("src/functions.R")
 tol <- args[["tolerance"]]
 model <- args[["model"]]
@@ -177,3 +178,4 @@ if (model == "noGT") {
         width = 5.5, height = 3
     )
 }
+saveRDS(em_df, sprintf("rds/em_df_%s.rds", model))

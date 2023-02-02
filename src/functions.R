@@ -121,7 +121,7 @@ vb <- function(..., tol_rel_obj = 1e-2, n_iterations = 50000) {
     }
 }
 
-sampling <- function(..., chains = 4, cores = 1) {
+sampling <- function(..., chains = 4, cores = 1, tol_rel_obj = NULL) {
     rstan::sampling(..., chains = chains, cores = cores, open_progress = FALSE)
 }
 
@@ -132,7 +132,6 @@ fit_stan_GT <- function(
         covariates = get_covariates("GT"),
         init = "random",
         method = c("vb", "sampling", "optimizing", "pathfinder", "pathfinder_parallel"),
-        tol = 1e-2,
         vars = "bj",
         model = baseqtl:::stanmodels$GT_nb_ase_refbias,
         probs = seq(0.005, 0.995, by = 0.005),
@@ -230,7 +229,6 @@ fit_stan_noGT <- function(
         covariates = get_covariates("noGT"),
         init = "random",
         method = c("vb", "sampling", "optimizing", "pathfinder", "pathfinder_parallel"),
-        tol = 1e-2,
         vars = "bj",
         model = NULL,
         probs = seq(0.005, 0.995, by = 0.005),
@@ -512,4 +510,13 @@ diagname <- function(x) {
         "n_het" = "Number of het individuals",
         "n_hom" = "Number of hom ref individuals"
     )[[x]]
+}
+
+
+mtol <- function(method, tol) {
+    if (method == "vb") {
+        sprintf("%s_%1.0e", method, tol)
+    } else {
+        method
+    }
 }

@@ -24,9 +24,10 @@ args <- parser$parse_args()
 method <- args[["inference"]]
 tol <- args[["tolerance"]]
 model <- args[["model"]]
-register(MulticoreParam(workers = 8))
+source("src/functions.R")
+options(mc.cores = 8)
 
-mtol <- sprintf("%s_%1.0e", method, tol)
+mtol <- mtol(method, tol)
 
 sfile <- sprintf("rds/%s/sfile.rds", model)
 combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
@@ -212,4 +213,5 @@ if (model == "GT") {
 }
 
 cat("nrow:", nrow(df_out), "\n")
+print(combfile)
 saveRDS(df_out, combfile)

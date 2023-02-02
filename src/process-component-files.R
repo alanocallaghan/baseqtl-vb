@@ -30,8 +30,7 @@ mname <- switch(method,
     "sampling" = "HMC"
 )
 
-mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
-# mtol <- method
+mtol <- mtol(method, tol)
 
 combfile <- sprintf("rds/%s/components/%s_combined.rds", model, mtol)
 

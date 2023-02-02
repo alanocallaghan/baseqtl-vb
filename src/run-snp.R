@@ -1,7 +1,10 @@
+# install.packages("RcppParallel")
+# install.packages(c("stringi", "httpuv", "rstan"))
+# devtools::install("../baseqtl")
+# stop()
 library("baseqtl")
 library("argparse")
 library("rstan")
-library("BiocParallel")
 
 parser <- ArgumentParser()
 parser$add_argument(
@@ -50,7 +53,7 @@ parser$add_argument(
 
 args <- parser$parse_args()
 
-register(MulticoreParam(workers = args[["cores"]]))
+options(mc.cores = args[["cores"]])
 source("src/functions.R")
 source("src/pathfinder.R")
 tol <- args[["tolerance"]]
@@ -62,9 +65,7 @@ model <- args[["model"]]
 fun <- match.fun(method)
 
 
-mtol <- sprintf("%s_%1.0e", method, tol)
-
-# mtol <- method
+mtol <- mtol(method, tol)
 
 fit_fun <- if (model == "GT") fit_stan_GT else fit_stan_noGT
 
@@ -72,9 +73,8 @@ covariates <- get_covariates(model)
 gene_data <- get_gene_data(gene, model)
 snps <- get_snps(gene_data)
 
-res <- bplapply(
+res <- parallel::mclapply(
     snps,
-    # res <- lapply(snps,
     function(snp) {
         cat("Running", snp, "\n")
         tab <- fit_fun(
@@ -84,12 +84,11 @@ res <- bplapply(
             covariates = covariates,
             method = method,
             seed = seed,
-            tol = tol
+            tol_rel_obj = tol
         )
         tab <- as.data.frame(tab)
         tab$seed <- seed
         tab
-        # }
     }
 )
 

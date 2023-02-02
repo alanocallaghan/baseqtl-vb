@@ -40,7 +40,7 @@ dfs <- lapply(
     methods,
     function(method) {
         cat(method, "\n")
-        mtol <- sprintf("%s_%1.0e", method, tol)
+        mtol <- mtol(method, tol)
         combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
         if (file.exists(combfile)) {
             return(readRDS(combfile))
@@ -98,7 +98,6 @@ g <- ggplot(df_summ) +
     scale_x_continuous(name = "HMC estimate", limits = lims) +
     scale_y_continuous(name = "ADVI estimate", limits = lims)
 ggsave(sprintf("%s/%s/variability/mean-var-pointrange.pdf", fpath, model), width = 12, height = 10)
-# ggsave("tmp.png")
 
 
 if (model == "GT") {
@@ -159,7 +158,6 @@ g <- ggplot(mean_sd_df) +
     aes(x = mean_hmc, y = mean_vb, colour = sd_vb) +
     geom_point() +
     scale_colour_viridis()
-# ggsave("tmp.png")
 ggsave(sprintf("%s/%s/variability/mean-sd-vb.pdf", fpath, model), width = 5, height = 5)
 
 
@@ -207,9 +205,10 @@ perf_dfs <- lapply(
             labels = factor(df[["null.99.hmc"]], levels = c(TRUE, FALSE))
         )
 
-        perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
         perf_aupr_vb <- performance(pred_vb, "aucpr")@y.values[[1]]
         perf_pr_vb <- performance(pred_vb, "prec", "rec")
+
+        perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
         perf_roc_vb <- performance(pred_vb, "tpr", "fpr")
         data.frame(
             seed = seed,
@@ -257,12 +256,6 @@ time_dfs <- lapply(
                 )
             }
         )
-        tabs <- sapply(
-            peps,
-            function(x) {
-                mean(df$PEP.vb > x)
-            }
-        )
 
         spec_vb <- sapply(
             peps,
@@ -302,14 +295,14 @@ g2 <- ggplot(time_df) +
         label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
-    ylim(0, max(sum(hmctimes), time_df$time)) +
-    # scale_y_log10() +
+    ylim(0, max(sum(hmctimes), time_df$time) / 3600) +
     labs(x = "Sensitivity", y = "Total time (hr)")
-ggsave(sprintf("%s/%s/variability/time-pep.pdf", fpath, model), width = 3.5, height = 3.5)
-# ggsave("tmp.pdf")
+# ggsave(sprintf("%s/%s/variability/time-pep.pdf", fpath, model), width = 3.5, height = 3.5)
+
 
 plot_grid(g1, g2, labels = "AUTO")
-ggsave(sprintf("%s/%s/variability/time-roc-pep.pdf", fpath, model), width = 5.5, height = 3)
+ggsave(sprintf("%s/%s/variability/time-roc-pep.pdf", fpath, model), width = 5.5, height = 3.5)
+
 
 time_dfs_levs <- lapply(
     unique(df_vb_hmc$seed.vb),
@@ -371,7 +364,7 @@ g <- ggplot(time_df_levs) +
     ylim(0, max(sum(hmctimes), time_df$time) / 3600) +
     # scale_y_log10() +
     labs(x = "Sensitivity", y = "Total time (hr)")
-ggsave(sprintf("%s/%s/variability/time-levs.pdf", fpath, model), width = 3.5, height = 3.5)
+# ggsave(sprintf("%s/%s/variability/time-levs.pdf", fpath, model), width = 3.5, height = 3.5)
 
 # ggsave("tmp2.png")
 

@@ -45,7 +45,7 @@ dfs <- lapply(
     methods,
     function(method) {
         cat(method, "\n")
-        mtol <- sprintf("%s_%1.0e", method, tol)
+        mtol <- mtol(method, tol)
         combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
         if (file.exists(combfile)) {
             return(readRDS(combfile))
@@ -202,7 +202,7 @@ make_crosstab(
     xn = "HMC",
     yn = "ADVI",
     prop = TRUE,
-    caption = paste0(
+    caption = paste(
         "Frequencies of HMC and ADVI significance calls at 99\\% threshold",
         "for BaseQTL", modname
     ),
@@ -264,49 +264,64 @@ ggsave(
 level <- 0.99
 ## by snp
 bc <- paste0("null.99.hmc")
-levs <- c(99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10)
+
+peps <- seq(1, 0, by = -0.01)
+peps <- peps[peps != 1]
 sens_vb <- sapply(
-    levs,
+    peps,
     function(x) {
-        column <- sprintf("null.%s.vb", x)
         sens_vec(
             truth = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE)),
-            estimate = factor(df_vb_hmc[[column]], levels = c(TRUE, FALSE))
+            estimate = factor(df_vb_hmc$PEP.vb > x, levels = c(TRUE, FALSE))
         )
     }
 )
+
 spec_vb <- sapply(
-    levs,
+    peps,
     function(x) {
-        column <- sprintf("null.%s.vb", x)
         spec_vec(
             truth = factor(df_vb_hmc[[bc]], levels = c(TRUE, FALSE)),
-            estimate = factor(df_vb_hmc[[column]], levels = c(TRUE, FALSE))
+            estimate = factor(df_vb_hmc$PEP.vb > x, levels = c(TRUE, FALSE))
         )
     }
 )
 time_vb <- sapply(
-    levs,
+    peps,
     function(x) {
-        column <- sprintf("null.%s.vb", x)
-        sum(df_vb_hmc$time.hmc[df_vb_hmc[[column]]]) + sum(df_vb_hmc$time.vb)
+        sum(df_vb_hmc$time.hmc[df_vb_hmc$PEP.vb > x]) + sum(df_vb_hmc$time.vb)
     }
 )
-gtime <- ggplot() +
-    aes(sens_vb, time_vb / 3600) +
-    geom_line() +
+sens_spec_time_df <- data.frame(
+    pep = peps,
+    sens = sens_vb,
+    spec = spec_vb,
+    time = time_vb
+)
+
+total_time_without_screening <- sum(df_vb_hmc$time.hmc)
+ind_sens_1 <- which(sens_spec_time_df$sens == 1)[[1]]
+time_saved <- (total_time_without_screening - sens_spec_time_df$time[ind_sens_1]) / total_time_without_screening
+prob_used <- sens_spec_time_df$pep[ind_sens_1]
+print(paste("Time reduction:", time_saved))
+print(paste("PEP used:", prob_used))
+
+
+gtime <- ggplot(sens_spec_time_df) +
+    aes(sens, time / 3600) +
+    geom_line(na.rm = TRUE) +
     geom_hline(
-        yintercept = sum(df_vb_hmc$time.hmc) / 3600,
+        yintercept = total_time_without_screening / 3600,
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = 0.96,
-        y = sum(df_vb_hmc$time.hmc) / 3600,
+        y = total_time_without_screening / 3600,
         label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
-    ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb) / 3600) +
+    ylim(0, max(total_time_without_screening, sens_spec_time_df$time_vb) / 3600) +
     labs(x = "Sensitivity", y = "Total time (hr)")
 # ggsave(
 #     sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, level),
@@ -321,8 +336,6 @@ pred_vb <- prediction(
 
 
 perf_auroc_vb <- performance(pred_vb, "auc")@y.values[[1]]
-perf_aupr_vb <- performance(pred_vb, "aucpr")@y.values[[1]]
-perf_pr_vb <- performance(pred_vb, "prec", "rec")
 perf_roc_vb <- performance(pred_vb, "tpr", "fpr")
 
 g <- ggplot() +
@@ -336,23 +349,21 @@ g <- ggplot() +
     scale_colour_brewer(palette = "Set2", name = NULL) +
     theme(legend.position = "bottom") +
     ggtitle(sprintf("ADVI; AUROC: %0.3f", perf_auroc_vb))
-ggsave(
-    sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, level),
-    width = 5, height = 5
-)
+# ggsave(
+#     sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, level),
+#     width = 5, height = 5
+# )
 groc <- g + ggtitle(NULL)
-ggsave(
-    sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, level),
-    width = 3.5, height = 4
-)
+# ggsave(
+#     sprintf("%s/%s/roc/roc_vb_%s.pdf", fpath, model, level),
+#     width = 3.5, height = 4
+# )
 
 p <- plot_grid(groc, gtime, labels = "AUTO")
 ggsave(
     sprintf("%s/%s/time/time_roc_%s.pdf", fpath, model, level),
-    width = 5.5, height = 3
+    width = 5.5, height = 3.5
 )
-
-
 print("Success!")
 
 
@@ -544,26 +555,30 @@ print("Success!")
 #     width = 12, height = 6
 # )
 
-# g <- ggplot() +
-#     aes(spec_vb, time_vb) +
+# g <- ggplot(sens_spec_time_df) +
+#     aes(spec, time) +
 #     geom_line() +
 #     geom_hline(
-#         yintercept = sum(df_vb_hmc$time.hmc),
+#         yintercept = total_time_without_screening,
 #         linetype = "dashed"
 #     ) +
 #     annotate(
 #         geom = "text",
-#         x = median(spec_vb),
-#         y = sum(df_vb_hmc$time.hmc) / 3600,
+#         x = median(sens_spec_time_df$spec_vb),
+#         y = total_time_without_screening / 3600,
 #         label = "Total time\nwithout screening",
 #         vjust = -0.2,
 #     ) +
 #     labs(x = "Specificity", y = "Total time (hr)") +
-#     ylim(0, max(sum(df_vb_hmc$time.hmc), time_vb))
+#     ylim(0, max(total_time_without_screening, time_vb))
 # ggsave(
 #     sprintf("%s/%s/time/time_vs_spec_vb_%s.pdf", fpath, model, level),
 #     width = 5, height = 5
 # )
+
+
+# perf_aupr_vb <- performance(pred_vb, "aucpr")@y.values[[1]]
+# perf_pr_vb <- performance(pred_vb, "prec", "rec")
 
 
 # g <- ggplot() +

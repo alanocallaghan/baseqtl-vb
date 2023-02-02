@@ -56,7 +56,7 @@ fun <- match.fun(method)
 register(MulticoreParam(workers = args[["cores"]]))
 # register(SerialParam())
 
-mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
+mtol <- mtol(method, tol)
 
 fit_fun <- if (model == "GT") fit_stan_GT else fit_stan_noGT
 
@@ -82,7 +82,7 @@ res <- bplapply(snps[use],
                     method = method,
                     algorithm = type,
                     summarise_posterior = FALSE,
-                    tol = tol
+                    tol_rel_obj = tol
                 )
                 tab
             }
@@ -96,7 +96,7 @@ res <- bplapply(snps[use],
             method = "sampling",
             summarise_posterior = FALSE,
             cores = 1,
-            tol = tol
+            tol_rel_obj = tol
         )
         out
     }

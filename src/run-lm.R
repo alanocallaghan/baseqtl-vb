@@ -1,6 +1,17 @@
 library("baseqtl")
-library("BiocParallel")
 library("argparse")
+
+parser <- ArgumentParser()
+parser$add_argument(
+    "-m", "--model",
+    default = "noGT",
+    type = "character"
+)
+
+options(mc.cores = 8)
+
+args <- parser$parse_args()
+
 
 probs <- seq(0.005, 0.995, by = 0.005)
 dir <- "/home/abo27/rds/rds-mrc-bsu/ev250/EGEUV1/quant/refbias2/Btrecase/SpikeMixV3_2/GT"
@@ -11,9 +22,8 @@ stan_files <- grep("GT.stan1.input.rds", files, value = TRUE, fixed = TRUE)
 genes <- unique(gsub(".*(ENSG\\d+)\\..*", "\\1", stan_files))
 
 ls_mat <- readRDS("/home/abo27/rds/rds-mrc-bsu/ev250/alan/data/scaled_gc_libsize.rds")
-register(MulticoreParam(workers = 8))
 
-lms <- bplapply(seq_along(genes),
+lms <- lapply(seq_along(genes),
     function(i) {
         cat(i, "/", length(genes), "genes, \n")
         gene <- genes[[i]]
@@ -57,8 +67,7 @@ lms <- bplapply(seq_along(genes),
             }
         )
         do.call(rbind, mods)
-    },
-    mc.cores = 8
+    }
 )
 df <- do.call(rbind, lms)
 df$padj <- NA

@@ -2,6 +2,7 @@ library("ggplot2")
 library("ggdist")
 library("ggrastr")
 library("ggpointdensity")
+library("dplyr")
 library("viridis")
 library("argparse")
 library("latex2exp")
@@ -49,7 +50,7 @@ dfs <- lapply(
     methods,
     function(method) {
         cat(method, "\n")
-        mtol <- sprintf("%s_%1.0e", method, tol)
+        mtol <- mtol(method, tol)
         combfile <- sprintf("rds/%s/%s_combined.rds", model, mtol)
         if (file.exists(combfile)) {
             return(readRDS(combfile))

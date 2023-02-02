@@ -19,7 +19,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-t", "--tolerance",
-    default = 1e-2,
+    default = 1e-3,
     type = "double"
 )
 
@@ -50,7 +50,7 @@ rerun_files <- sprintf(
 
 dfs <- lapply(rerun_files, readRDS)
 df_all <- do.call(rbind, dfs)
-rerun_df <- readRDS(sprintf("rds/%s_rerun_discrepant_full.rds", model))
+rerun_df <- readRDS(sprintf("rds/%s_%s_rerun_discrepant_full.rds", model, tol_str))
 
 df_all$rn <- rownames(df_all)
 df_all$rowidx <- gsub(
@@ -417,7 +417,7 @@ print(fname)
 ggsave(fname, width = 8, height = 5)
 
 
-if (model == "noGT") set.seed(35)
+set.seed(35)
 
 fit_real_hmc <- fit_mod(model, mygene, mysnp, mycondition)
 fit_real_vb <- fit_mod(model, mygene, mysnp, mycondition, method = "vb")

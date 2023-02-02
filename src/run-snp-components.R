@@ -42,7 +42,7 @@ fun <- match.fun(method)
 components <- c("inter", "intra", "both")
 
 
-mtol <- if (method == "vb") sprintf("%s_%1.0e", method, tol) else method
+mtol <- mtol(method, tol)
 fit_fun <- if (model == "GT") fit_stan_GT else fit_fun <- fit_stan_noGT
 
 covariates <- get_covariates(model)

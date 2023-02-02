@@ -84,7 +84,10 @@ if (!file.exists(f <- sprintf("rds/%s_full_posterior_discrepant_hmc.rds", model)
         full_posteriors_hmc,
         f
     )
+} else {
+    cat("skipping", f, "\n")
 }
+
 if (!file.exists(f <- sprintf("rds/%s_full_posterior_discrepant_vb.rds", model))) {
     full_posteriors_vb <- parallel::mclapply(
         seq_len(nrow(df)),
@@ -105,6 +108,8 @@ if (!file.exists(f <- sprintf("rds/%s_full_posterior_discrepant_vb.rds", model))
         full_posteriors_vb,
         f
     )
+} else {
+    cat("skipping", f, "\n")
 }
 
 if (!file.exists(f <- rerun_files[[1]])) {
@@ -134,6 +139,8 @@ if (!file.exists(f <- rerun_files[[1]])) {
     rand_df <- do.call(rbind, rand_res)
     rand_df$init <- "random"
     saveRDS(rand_df, f)
+} else {
+    cat("skipping", f, "\n")
 }
 
 if (!file.exists(f <- rerun_files[[2]])) {
@@ -163,6 +170,8 @@ if (!file.exists(f <- rerun_files[[2]])) {
     fixed_df <- do.call(rbind, fixed_res)
     fixed_df$init <- "fixed"
     saveRDS(fixed_df, f)
+} else {
+    cat("skipping", f, "\n")
 }
 
 if (!file.exists(f <- rerun_files[[3]])) {
@@ -198,10 +207,13 @@ if (!file.exists(f <- rerun_files[[3]])) {
     old_df <- do.call(rbind, old_res)
     old_df$init <- "old"
     saveRDS(old_df, f)
+} else {
+    cat("skipping", f, "\n")
 }
 
-if (!file.exists(f <- sprintf("rds/%s_rerun_discrepant_full.rds", model))) {
+if (!file.exists(f <- sprintf("rds/%s_%s_rerun_discrepant_full.rds", model, tol_str))) {
     print("rerunning HMC")
+    print(f)
     rerun_hmc <- parallel::mclapply(
         seq_len(nrow(df)),
         function(i) {
@@ -220,4 +232,6 @@ if (!file.exists(f <- sprintf("rds/%s_rerun_discrepant_full.rds", model))) {
     )
     rerun_df <- do.call(rbind, rerun_hmc)
     saveRDS(rerun_df, f)
+} else {
+    cat("skipping", f, "\n")
 }

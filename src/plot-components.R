@@ -32,7 +32,6 @@ fpath <- sprintf("fig_%1.0e", tol)
 sapply(file.path(fpath, model, c("diag", "time", "estimates", "roc")), function(p) {
     dir.create(p, showWarnings = FALSE, recursive = TRUE)
 })
-# fpath <- "fig"
 
 # "optimizing",
 methods <- c("vb", "sampling")
@@ -40,7 +39,7 @@ dfs <- lapply(
     methods,
     function(method) {
         cat(method, "\n")
-        mtol <- if (method == "vb") sprintf("vb_%1.0e", tol) else method
+        mtol <- mtol(method, tol)
         combfile <- sprintf("rds/%s/components/%s_combined.rds", model, mtol)
         if (file.exists(combfile)) {
             return(readRDS(combfile))

@@ -45,7 +45,8 @@ rule all:
         expand(
             "fig_{tol}/GT/roc/time_roc_all_99.pdf",
             tol = tols
-        )
+        ),
+        "fig_1e-02/noGT/diag/constraints.pdf"
 
 
 rule plots:
@@ -67,6 +68,31 @@ rule plots:
         Rscript ./src/plot-variability.R -m GT -t {wildcards.tol}
         Rscript ./src/plot-variability.R -m noGT -t {wildcards.tol}
         # Rscript ./src/plot-components.R -m GT -t {wildcards.tol}
+        """
+
+
+rule run_constraints:
+    resources: runtime="04:00:00", mem_mb=20000
+    threads: 8
+    input:
+        "rds/cons.RData"
+    output:
+        "rds/noGT/constraints.rds"
+    shell:
+        """
+        Rscript src/run-constraints.R
+        """
+
+rule plot_constraints:
+    resources: runtime="04:00:00", mem_mb=20000
+    threads: 8
+    input:
+        "rds/noGT/constraints.rds"
+    output:
+        "fig_1e-02/noGT/diag/constraints.pdf"
+    shell:
+        """
+        Rscript src/plot-constraints.R
         """
 
 

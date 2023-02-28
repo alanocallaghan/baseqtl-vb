@@ -491,27 +491,6 @@ mkfigdir <- function(fpath, model) {
 }
 
 
-diagname <- function(x) {
-    diag_vars <- c(
-        "gene" = "Gene",
-        "Rhat" = TeX("\\hat{R}"),
-        "khat" = TeX("\\hat{k}"),
-        "converged" = "ADVI converged",
-        "niter" = "ADVI iterations",
-        "n_eff.hmc" = "Effective sample size",
-        "time.hmc" = "Time taken",
-        "n_tot" = "Sample size",
-        "p_het" = "Proportion heterozygous",
-        "se_mean.hmc" = "SE(mean)",
-        "sd.hmc" = "Posterior SD",
-        "mean_count" = "mean(RNAseq counts)",
-        "sd_count" = "SD(RNAseq counts)",
-        "n_wt" = "Number of mut individuals",
-        "n_het" = "Number of het individuals",
-        "n_hom" = "Number of hom ref individuals"
-    )[[x]]
-}
-
 
 mtol <- function(method, tol) {
     if (method == "vb") {

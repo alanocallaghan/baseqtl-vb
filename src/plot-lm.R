@@ -21,7 +21,7 @@ parser$add_argument(
 )
 parser$add_argument(
     "-t", "--tolerance",
-    default = 0.001,
+    default = 0.01,
     type = "double"
 )
 
@@ -52,6 +52,9 @@ dfs <- lapply(
     }
 )
 dfs[] <- lapply(dfs, add_nulls)
+dfs[] <- lapply(dfs, function(df) {
+    df[df$seed == 42, ]
+})
 
 names(dfs) <- methods
 by <- if (model == "GT") {
@@ -102,6 +105,11 @@ df <- merge(
     by = c("snp", "gene"),
     suffixes = c(".hmc", ".lm")
 )
+df$time.hmc <- df$time.hmc / 3600
+df$time.vb <- df$time.vb / 3600
+df$time.glm <- df$time.glm / 3600
+df$time.lm <- df$time.lm / 3600
+
 
 get_sens_spec <- function(
         truth,
@@ -136,7 +144,7 @@ get_time <- function(
     sapply(
         thresholds,
         function(threshold) {
-            sum(times_hmc[comparison(prob, threshold)]) + sum(times_approx)
+            (sum(times_hmc[comparison(prob, threshold)]) + sum(times_approx))
         }
     )
 }
@@ -211,24 +219,24 @@ time_vb <- get_time(
     comparison = `>`
 )
 
-
 gtime <- ggplot() +
-    geom_path(aes(sens_lm, time_lm / 3600, colour = "lm"), na.rm = TRUE) +
-    geom_path(aes(sens_glm, time_glm / 3600, colour = "glm"), na.rm = TRUE) +
-    geom_path(aes(sens_vb, time_vb / 3600, colour = "ADVI"), na.rm = TRUE) +
+    geom_path(aes(sens_lm, time_lm, colour = "lm"), na.rm = TRUE) +
+    geom_path(aes(sens_glm, time_glm, colour = "glm"), na.rm = TRUE) +
+    geom_path(aes(sens_vb, time_vb, colour = "ADVI"), na.rm = TRUE) +
     geom_hline(
-        yintercept = sum(df$time.hmc) / 3600,
+        yintercept = sum(df$time.hmc),
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = 0.5,
-        y = sum(df$time.hmc) / 3600,
-        label = "Total time without screening",
+        y = sum(df$time.hmc),
+        label = "Total time\nwithout screening",
         vjust = -0.3,
     ) +
     labs(x = "Sensitivity", y = "Total time (hr)") +
-    ylim(0, max(sum(df$time.hmc), time_vb, time_lm, time_glm) / 3600) +
+    # ylim(0, 2700) +
+    ylim(0, max(sum(df$time.hmc), time_vb, time_lm, time_glm) * 1.1) +
     scale_colour_brewer(palette = "Set2", name = NULL) +
     theme(legend.position = "bottom")
 # ggsave(
@@ -236,32 +244,6 @@ gtime <- ggplot() +
 #     width = 4, height = 4.5
 # )
 
-
-g <- ggplot() +
-    geom_path(aes(spec_lm, time_lm / 3600, colour = "lm"), na.rm = TRUE) +
-    geom_path(aes(spec_glm, time_glm / 3600, colour = "glm"), na.rm = TRUE) +
-    geom_path(aes(spec_vb, time_vb / 3600, colour = "ADVI"), na.rm = TRUE) +
-    geom_hline(
-        yintercept = sum(df$time.hmc) / 3600,
-        linetype = "dashed"
-    ) +
-    annotate(
-        geom = "text",
-        x = 0.5,
-        y = sum(df$time.hmc) / 3600,
-        label = "Total time without screening",
-        vjust = -0.3,
-    ) +
-    labs(x = "Specificity", y = "Total time (hr)") +
-    scale_y_log10(
-        limits = c(1, max(sum(df$time.hmc), time_vb, time_lm, time_glm) / 3600)
-    ) +
-    scale_colour_brewer(palette = "Set2", name = NULL) +
-    theme(legend.position = "bottom")
-ggsave(
-    sprintf("%s/%s/time/time_vs_spec_%s.pdf", fpath, model, p_threshold),
-    width = 4, height = 4
-)
 
 pred_lm <- prediction(
     predictions = 1 - df[["padj.lm"]],
@@ -319,6 +301,33 @@ ggsave(
 
 
 
+## specificity
+
+# g <- ggplot() +
+#     geom_path(aes(spec_lm, time_lm, colour = "lm"), na.rm = TRUE) +
+#     geom_path(aes(spec_glm, time_glm, colour = "glm"), na.rm = TRUE) +
+#     geom_path(aes(spec_vb, time_vb, colour = "ADVI"), na.rm = TRUE) +
+#     geom_hline(
+#         yintercept = sum(df$time.hmc),
+#         linetype = "dashed"
+#     ) +
+#     annotate(
+#         geom = "text",
+#         x = 0.5,
+#         y = sum(df$time.hmc),
+#         label = "Total time\nwithout screening",
+#         vjust = -0.3,
+#     ) +
+#     labs(x = "Specificity", y = "Total time (hr)") +
+#     scale_y_log10(
+#         limits = c(1, max(sum(df$time.hmc), time_vb, time_lm, time_glm))
+#     ) +
+#     scale_colour_brewer(palette = "Set2", name = NULL) +
+#     theme(legend.position = "bottom")
+# ggsave(
+#     sprintf("%s/%s/time/time_vs_spec_%s.pdf", fpath, model, p_threshold),
+#     width = 4, height = 4
+# )
 
 
 ##### plots of estimates and coefs/pvals... not needed but useful maybe

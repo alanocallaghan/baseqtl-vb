@@ -27,6 +27,7 @@ ind_no_refbias <- which(proportion_no_refbias == 1)
 genes_no_refbias <- unique(sapply(datas, function(x) x$gene)[ind_no_refbias])
 gene_ind <- ind_no_refbias[[1]]
 gene <- datas[[gene_ind]]$gene
+# "ENSG00000057149", "SERPINB3"
 condition <- datas[[gene_ind]]$cond
 gene_data <- datas[[gene_ind]]$data
 
@@ -47,9 +48,9 @@ opt_d_nocons <- stan_model("src/stan/opt-d-nocons/noGT_nb_ase.stan")
 
 mods <- list(master=master, cons=opt_d_cons, nocons=opt_d_nocons)
 
-
+set.seed(42)
 snps <- names(gene_data)
-res <- lapply(snps, function(snp) {
+res <- parallel::mclapply(snps, function(snp) {
     snp_in <- gene_data[[snp]]
     data <- in.neg.beta.noGT.eff2(
         snp_in,
@@ -68,10 +69,10 @@ res <- lapply(snps, function(snp) {
     )
     sampling_res <- as.data.frame(do.call(rbind, res))
     colnames(sampling_res) <- "mean"
+    sampling_res$fails <- 0
     sampling_res$model <- rownames(sampling_res)
     sampling_res$snp <- snp
     sampling_res$method <- "sampling"
-
     vb_dfs <- replicate(
         20,
         {
@@ -103,7 +104,7 @@ res <- lapply(snps, function(snp) {
     )
     vb_df <- do.call(rbind, vb_dfs)
     rbind(sampling_res, vb_df)
-})
+}, mc.cores = 8)
 
 df <- do.call(rbind, res)
 saveRDS(df, "rds/noGT/constraints.rds")

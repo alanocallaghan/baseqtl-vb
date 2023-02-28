@@ -21,7 +21,24 @@ wildcard_constraints:
     seed="\d+",
     tol="[^_/]+"
 
+
+
 rule all:
+    input:
+        "figures/fig1-meanfield-fullrank.pdf",
+        "figures/fig2-point-estimates-GT-01.pdf",
+        "figures/fig3-time-ROC-GT.pdf",
+        "figures/fig4-time-ROC-variability-GT.pdf",
+        "figures/fig5-point-estimates-noGT-01.pdf",
+        "figures/fig6-time-ROC-variability-noGT.pdf",
+        "figures/fig7-discrepancy-diagnostics-GT.pdf",
+        "figures/fig8-discrepancy-diagnostics-noGT.pdf",
+        "figures/fig9-point-estimates-GT-001.pdf",
+        "figures/fig10-point-estimates-noGT-001.pdf",
+        "figures/fig11-component-prior.pdf",
+        "figures/fig12-constraints.pdf"
+
+rule figures:
     input:
         expand(
             "fig_{tol}/{model}/estimates/point-estimates-both-99.pdf",
@@ -47,7 +64,34 @@ rule all:
             tol = tols
         ),
         "fig_1e-02/noGT/diag/constraints.pdf"
-
+    output:
+        "figures/fig1-meanfield-fullrank.pdf",
+        "figures/fig2-point-estimates-GT-01.pdf",
+        "figures/fig3-time-ROC-GT.pdf",
+        "figures/fig4-time-ROC-variability-GT.pdf",
+        "figures/fig5-point-estimates-noGT-01.pdf",
+        "figures/fig6-time-ROC-variability-noGT.pdf",
+        "figures/fig7-discrepancy-diagnostics-GT.pdf",
+        "figures/fig8-discrepancy-diagnostics-noGT.pdf",
+        "figures/fig9-point-estimates-GT-001.pdf",
+        "figures/fig10-point-estimates-noGT-001.pdf",
+        "figures/fig11-component-prior.pdf",
+        "figures/fig12-constraints.pdf"
+    shell:
+        """
+        cp "fig_1e-02/GT/diag/meanfield-fullrank.pdf" "figures/fig1-meanfield-fullrank.pdf"
+        cp "fig_1e-02/GT/estimates/point-estimates-both-99.pdf" "figures/fig2-point-estimates-GT-01.pdf"
+        cp "fig_1e-02/GT/roc/time_roc_all_99.pdf" "figures/fig3-time-ROC-GT.pdf"
+        cp "fig_1e-02/GT/variability/time-roc-pep.pdf" "figures/fig4-time-ROC-variability-GT.pdf"
+        cp "fig_1e-02/noGT/estimates/point-estimates-both-99.pdf" "figures/fig5-point-estimates-noGT-01.pdf"
+        cp "fig_1e-02/noGT/variability/time-roc-pep.pdf" "figures/fig6-time-ROC-variability-noGT.pdf"
+        cp "fig_1e-02/GT/diag/disc_niter_eff.pdf" "figures/fig7-discrepancy-diagnostics-GT.pdf"
+        cp "fig_1e-02/noGT/diag/disc_niter_eff.pdf" "figures/fig8-discrepancy-diagnostics-noGT.pdf"
+        cp "fig_1e-03/GT/estimates/point-estimates-both-99.pdf" "figures/fig9-point-estimates-GT-001.pdf"
+        cp "fig_1e-03/noGT/estimates/point-estimates-both-99.pdf" "figures/fig10-point-estimates-noGT-001.pdf"
+        cp "fig_1e-02/GT/diag/most_discrepant_method_comp_prior.pdf" "figures/fig11-component-prior.pdf"
+        cp "fig_1e-02/noGT/diag/constraints.pdf" "figures/fig12-constraints.pdf"
+        """
 
 rule plots:
     resources: runtime="02:00:00", mem_mb=20000
@@ -67,7 +111,6 @@ rule plots:
         Rscript ./src/plot-times.R -m noGT -t {wildcards.tol}
         Rscript ./src/plot-variability.R -m GT -t {wildcards.tol}
         Rscript ./src/plot-variability.R -m noGT -t {wildcards.tol}
-        # Rscript ./src/plot-components.R -m GT -t {wildcards.tol}
         """
 
 
@@ -84,8 +127,8 @@ rule run_constraints:
         """
 
 rule plot_constraints:
-    resources: runtime="04:00:00", mem_mb=20000
-    threads: 8
+    resources: runtime="01:00:00", mem_mb=10000
+    threads: 1
     input:
         "rds/noGT/constraints.rds"
     output:

@@ -11,7 +11,7 @@ library("cowplot")
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 parser$add_argument(
@@ -97,6 +97,33 @@ cmdf <- cmdf[cmdf$n_eff.hmc > minEff & cmdf$Rhat < maxRhat, ]
 ## supplementary plots of discrepancy versus basic diagnostic vars
 ################################################################################
 
+diagname <- function(x) {
+    c(
+        "gene" = "Gene",
+        "Rhat" = TeX("\\hat{R}"),
+        "khat" = TeX("\\hat{k}"),
+        "converged" = "ADVI converged",
+        "niter" = "ADVI iterations",
+        "n_eff.hmc" = "Effective sample size",
+        "time.hmc" = "Time taken",
+        "n_tot" = "Sample size",
+        "p_het" = "Proportion heterozygous",
+        "se_mean.hmc" = "SE(mean)",
+        "sd.hmc" = "Posterior SD",
+        "mean_count" = "mean(RNAseq counts)",
+        "sd_count" = "SD(RNAseq counts)",
+        "n_wt" = "Number of mut individuals",
+        "n_het" = "Number of het individuals",
+        "n_hom" = "Number of hom ref individuals"
+    )[[x]]
+}
+typename <- function(x) {
+    c(
+        "abs_discrepancy" = "Absolute discrepancy in mean",
+        "abs_discrepancy_99hpdi_width" = "Absolute discrepancy in\nHPD interval width"
+    )[[x]]
+}
+
 cmdf <- cmdf %>%
     arrange(-abs(discrepancy))
 cmdf$top50 <- c(rep(TRUE, 50), rep(FALSE, nrow(cmdf) - 50))
@@ -128,18 +155,20 @@ for (type in c("abs_discrepancy", "abs_discrepancy_99hpdi_width")) {
     # for (type in c("discrepancy", "disc_sc_sdh", "disc_sc_sdh", "disc_sc_meanh", "disc_sc_meanv")) {
     for (x in diag_vars) {
         geom <- if (is.numeric(cmdf[[x]])) {
-            geom_point(shape = 16, size = 0.8, alpha = 0.6, aes(colour = top50))
+            geom_point(shape = 16, size = 0.8, alpha = 0.6
+                # , aes(colour = top50)
+            )
         } else if (is.logical(cmdf[[x]]) || is.character(cmdf[[x]]) || is.factor(cmdf[[x]])) {
             geom_boxplot(fill = "grey80")
         }
         g <- ggplot(arrange(cmdf, abs(discrepancy))) +
             aes(.data[[x]], .data[[type]]) +
             geom +
-            geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
-            scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
-            scale_y_log10() +
+            # geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+            # scale_colour_brewer(palette = "Set1", name = "Top 50", direction = -1) +
+            # scale_y_log10() +
             theme(legend.position = "bottom") +
-            labs(x = diagname(x), y = type)
+            labs(x = diagname(x), y = typename(type))
 
         ggsave(
             sprintf("%s/%s/diag/%s_%s_%s.png", fpath, model, type, gsub("\\.", "_", x), method),
@@ -147,3 +176,22 @@ for (type in c("abs_discrepancy", "abs_discrepancy_99hpdi_width")) {
         )
     }
 }
+
+sub_diag_vars <- c("niter", "n_eff.hmc")
+g1 <- ggplot(arrange(cmdf, abs(discrepancy))) +
+    aes(.data[["niter"]], .data[["abs_discrepancy"]]) +
+    geom_pointdensity(shape = 16, size = 0.8, alpha = 0.6) +
+    scale_colour_viridis(guide = "none") +
+    theme(legend.position = "bottom") +
+    labs(x = diagname("niter"), y = "Absolute discrepancy in mean")
+g2 <- ggplot(arrange(cmdf, abs(discrepancy))) +
+    aes(.data[["n_eff.hmc"]], .data[["abs_discrepancy"]]) +
+    geom_pointdensity(shape = 16, size = 0.8, alpha = 0.6) +
+    theme(legend.position = "bottom") +
+    scale_colour_viridis(guide = "none") +
+    labs(x = diagname("n_eff.hmc"), y = "Absolute discrepancy in mean")
+gg <- cowplot::plot_grid(g1, g2, labels = "AUTO")
+ggsave(
+    sprintf("%s/%s/diag/disc_niter_eff.pdf", fpath, model),
+    width = 5.5, height = 3.5
+)

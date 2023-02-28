@@ -14,4 +14,4 @@ g <- ggplot(df, aes(x = method, y = mean)) +
     geom_jitter(alpha = 0.5) +
     facet_wrap(~model) +
     labs(x = "Inference method", y = TeX("Estimated $\\beta_{aFC}"))
-ggsave("fig_1e-02/noGT/diag/constraints.pdf", width = 3, height = 4)
+ggsave("fig_1e-02/noGT/diag/constraints.pdf", width = 3, height = 2)

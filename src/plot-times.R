@@ -15,7 +15,7 @@ theme_set(theme_bw())
 parser <- ArgumentParser()
 parser$add_argument(
     "-m", "--model",
-    default = "noGT",
+    default = "GT",
     type = "character"
 )
 parser$add_argument(
@@ -71,7 +71,6 @@ by <- if (model == "GT") {
         "n_wt", "n_het", "n_hom", "p_het", "n_tot"
     )
 }
-dfs[["vb"]] <- dfs[["vb"]][dfs[["vb"]]$seed == "7", ]
 df_vb_hmc <- merge(
     dfs[["vb"]], dfs[["sampling"]],
     by = by, suffix = c(".vb", ".hmc"))
@@ -94,6 +93,20 @@ rhat_filter <- df_vb_hmc$Rhat < max_rhat
 df_vb_hmc <- df_vb_hmc[eff_filter & rhat_filter, ]
 ## from PSIS paper, arxiv 1507.02646
 ## khat filter of 0.7
+
+df_summ <- df_vb_hmc %>%
+    group_by(factor(seed.vb)) %>%
+    summarise(
+        rmse = sqrt(mean(discrepancy ^ 2)),
+        mean = mean(abs(discrepancy)),
+        median = median(abs(discrepancy)),
+        max = max(abs(discrepancy)),
+        .groups = "drop_last"
+    )
+print(df_summ)
+
+
+df_vb_hmc <- df_vb_hmc[df_vb_hmc$seed.vb == "7", ]
 
 
 if (model == "GT") {
@@ -233,15 +246,15 @@ ggsave(
 g <- plot_with_legend_below(
     gp99 + annotate(
         geom = "text",
-        x = -1.5, y = 1.5,
-        hjust = -0.2, vjust = -0.2,
+        x = min(mdf_filtered_outliers$mean.hmc), y = max(mdf_filtered_outliers$mean.vb),
+        # hjust = -0.2, vjust = -0.2,
         fontface = "bold",
         label = "A"
     ),
     gpd99 + annotate(
         geom = "text",
-        x = -1.5, y = 1.5,
-        hjust = -0.2, vjust = -0.2,
+        x = min(mdf_filtered_outliers$mean.hmc), y = max(mdf_filtered_outliers$mean.vb),
+        # hjust = -0.2, vjust = -0.2,
         fontface = "bold",
         label = "B"
     ) +
@@ -296,10 +309,10 @@ sens_spec_time_df <- data.frame(
     pep = peps,
     sens = sens_vb,
     spec = spec_vb,
-    time = time_vb
+    time = time_vb / 3600 # s to hr
 )
 
-total_time_without_screening <- sum(df_vb_hmc$time.hmc)
+total_time_without_screening <- sum(df_vb_hmc$time.hmc) / 3600 # s to hr
 ind_sens_1 <- which(sens_spec_time_df$sens == 1)[[1]]
 time_saved <- (total_time_without_screening - sens_spec_time_df$time[ind_sens_1]) / total_time_without_screening
 prob_used <- sens_spec_time_df$pep[ind_sens_1]
@@ -308,20 +321,20 @@ print(paste("PEP used:", prob_used))
 
 
 gtime <- ggplot(sens_spec_time_df) +
-    aes(sens, time / 3600) +
+    aes(sens, time) +
     geom_line(na.rm = TRUE) +
     geom_hline(
-        yintercept = total_time_without_screening / 3600,
+        yintercept = total_time_without_screening,
         linetype = "dashed"
     ) +
     annotate(
         geom = "text",
         x = 0.96,
-        y = total_time_without_screening / 3600,
+        y = total_time_without_screening,
         label = "Total time\nwithout screening",
         vjust = -0.2,
     ) +
-    ylim(0, max(total_time_without_screening, sens_spec_time_df$time_vb) / 3600) +
+    ylim(0, max(total_time_without_screening, sens_spec_time_df$time_vb)) +
     labs(x = "Sensitivity", y = "Total time (hr)")
 # ggsave(
 #     sprintf("%s/%s/time/time_vs_sens_vb_%s.pdf", fpath, model, level),
@@ -565,7 +578,7 @@ print("Success!")
 #     annotate(
 #         geom = "text",
 #         x = median(sens_spec_time_df$spec_vb),
-#         y = total_time_without_screening / 3600,
+#         y = total_time_without_screening,
 #         label = "Total time\nwithout screening",
 #         vjust = -0.2,
 #     ) +
@@ -608,7 +621,7 @@ print("Success!")
 #
 ################################################################################
 
-# stop()
+
 # if (model == "GT") {
 #     df_pf_hmc <- merge(dfs[["pathfinder"]], dfs[["sampling"]], by = by, suffix = c(".vb", ".hmc"))
 #     dfs[["pathfinder_parallel"]] <- dfs[["pathfinder_parallel"]][, !duplicated(colnames(dfs[["pathfinder_parallel"]]))]

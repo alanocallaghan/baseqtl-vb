@@ -392,7 +392,8 @@ fit_mod <- function(model, gene, snp, condition, method = "sampling", stanmodel 
     fit
 }
 
-plot_with_legend_below <- function(...,
+plot_with_legend_below <- function(
+        ...,
         rel_heights = if (common_x) c(0.85, 0.05, 0.15) else c(0.85, 0.15),
         common_x = FALSE,
         nrow = 1,

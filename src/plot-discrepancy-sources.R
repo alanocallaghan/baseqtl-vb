@@ -190,7 +190,7 @@ g2 <- ggplot(arrange(cmdf, abs(discrepancy))) +
     theme(legend.position = "bottom") +
     scale_colour_viridis(guide = "none") +
     labs(x = diagname("n_eff.hmc"), y = "Absolute discrepancy in mean")
-gg <- cowplot::plot_grid(g1, g2, labels = "AUTO")
+gg <- cowplot::plot_grid(g1, g2, labels = if (model == "GT") c("A", "B") else c("C", "D"))
 ggsave(
     sprintf("%s/%s/diag/disc_niter_eff.pdf", fpath, model),
     width = 5.5, height = 3.5

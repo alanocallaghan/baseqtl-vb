@@ -193,10 +193,11 @@ gp99 <- ggplot(mdf_nullord) +
     scale +
     guides(colour = guide_legend(override.aes = list(size = 2))) +
     theme(legend.position = "bottom")
-# ggsave(
-#     sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
-#     width = 5, height = 5
-# )
+g <- cowplot::plot_grid(gp99, labels=if(model=="GT") "A" else "B")
+ggsave(g,
+    file = sprintf("%s/%s/estimates/point-estimates-99.pdf", fpath, model),
+    width = 5, height = 5
+)
 make_crosstab(
     x = ifelse(mdf_filtered_outliers$null.99.hmc, "Significant", "Null"),
     y = ifelse(mdf_filtered_outliers$null.99.vb, "Significant", "Null"),

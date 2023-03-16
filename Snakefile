@@ -120,25 +120,23 @@ rule plots:
 rule run_constraints:
     resources: runtime="04:00:00", mem_mb=20000
     threads: 8
-    input:
-        "rds/cons.RData"
     output:
-        "rds/noGT/constraints.rds"
+        "rds/{model}/constraints.rds"
     shell:
         """
-        Rscript src/run-constraints.R
+        Rscript src/run-constraints.R -m {wildcards.model}
         """
 
 rule plot_constraints:
     resources: runtime="01:00:00", mem_mb=10000
     threads: 1
     input:
-        "rds/noGT/constraints.rds"
+        "rds/{model}/constraints.rds"
     output:
-        "fig_1e-02/noGT/diag/constraints.pdf"
+        "fig_1e-02/{model}/diag/constraints.pdf"
     shell:
         """
-        Rscript src/plot-constraints.R
+        Rscript src/plot-constraints.R -m {wildcards.model}
         """
 
 

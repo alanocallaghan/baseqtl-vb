@@ -1,12 +1,7 @@
 library("baseqtl")
 library("argparse")
 
-parser <- ArgumentParser()
-parser$add_argument(
-    "-m", "--model",
-    default = "noGT",
-    type = "character"
-)
+
 
 options(mc.cores = 8)
 

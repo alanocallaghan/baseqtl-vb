@@ -317,8 +317,14 @@ total_time_without_screening <- sum(df_vb_hmc$time.hmc) / 3600 # s to hr
 ind_sens_1 <- which(sens_spec_time_df$sens == 1)[[1]]
 time_saved <- (total_time_without_screening - sens_spec_time_df$time[ind_sens_1]) / total_time_without_screening
 prob_used <- sens_spec_time_df$pep[ind_sens_1]
+sens_used <- sens_spec_time_df$sens[ind_sens_1]
+spec_used <- sens_spec_time_df$spec[ind_sens_1]
+
+
 print(paste("Time reduction:", time_saved))
 print(paste("PEP used:", prob_used))
+print(paste("Sensitivity:", sens_used))
+print(paste("Specificity:", spec_used))
 
 
 gtime <- ggplot(sens_spec_time_df) +

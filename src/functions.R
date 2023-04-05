@@ -218,6 +218,7 @@ summarise_post <- function(post, method, vars, probs) {
     }
     tab$null.99 <- sign(tab$"0.5%") == sign(tab$"99.5%")
     p <- mean(draws$bj > 0)
+    tab$NComponents <- mclust::Mclust(draws, modelNames="V")$G
     tab$PEP <- 2 * max(p, 1 - p) - 1
     tab
 }

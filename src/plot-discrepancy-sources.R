@@ -190,6 +190,19 @@ g2 <- ggplot(arrange(cmdf, abs(discrepancy))) +
     theme(legend.position = "bottom") +
     scale_colour_viridis(guide = "none") +
     labs(x = diagname("n_eff.hmc"), y = "Absolute discrepancy in mean")
+## replace this with estimate of the number of mixture components, boxplot
+g3 <- ggplot(arrange(cmdf, abs(discrepancy))) +
+    aes(.data[["sd.hmc"]], .data[["abs_discrepancy"]]) +
+    geom_pointdensity(shape = 16, size = 0.8, alpha = 0.6) +
+    theme(legend.position = "bottom") +
+    scale_colour_viridis(guide = "none") +
+    labs(x = "Posterior SD (HMC)", y = "Absolute discrepancy in mean")
+g4 <- ggplot(arrange(cmdf, abs(discrepancy))) +
+    aes(.data[["khat"]], .data[["abs_discrepancy"]]) +
+    geom_pointdensity(shape = 16, size = 0.8, alpha = 0.6) +
+    theme(legend.position = "bottom") +
+    scale_colour_viridis(guide = "none") +
+    labs(x = diagname("khat"), y = "Absolute discrepancy in mean")
 gg <- cowplot::plot_grid(g1, g2, labels = if (model == "GT") c("A", "B") else c("C", "D"))
 ggsave(
     sprintf("%s/%s/diag/disc_niter_eff.pdf", fpath, model),
